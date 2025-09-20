@@ -49,6 +49,7 @@
             
             loginSection.style.display = "none";
             dashboardSection.style.display = "block";
+            loginMessage.textContent = "✅ Inloggen succesvol! Je wordt nu doorgestuurd.";
 
             // Luister naar real-time updates van nieuwsberichten
             const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
@@ -154,21 +155,25 @@
     }
 
     // Login-knop met addEventListener voor robuustheid
-    loginBtn.addEventListener('click', async () => {
-        loginMessage.textContent = "⏳ Bezig met inloggen...";
-        try {
-            console.log("Login-knop geklikt.");
-            if (initialAuthToken) {
-                await signInWithCustomToken(auth, initialAuthToken);
-            } else {
-                await signInAnonymously(auth);
+    if (loginBtn) {
+        loginBtn.addEventListener('click', async () => {
+            loginMessage.textContent = "⏳ Bezig met inloggen...";
+            loginMessage.style.color = "#4a5568";
+            try {
+                console.log("Login-knop geklikt.");
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                // AuthStateChanged zal de UI update na succes
+            } catch (error) {
+                console.error("Fout bij inloggen:", error);
+                loginMessage.textContent = `❌ Fout bij inloggen: ${error.message}`;
+                loginMessage.style.color = "#e53e3e";
             }
-            loginMessage.textContent = "✅ Inloggen succesvol! Je wordt nu doorgestuurd.";
-        } catch (error) {
-            console.error("Fout bij inloggen:", error);
-            loginMessage.textContent = `❌ Fout bij inloggen: ${error.message}`;
-        }
-    });
+        });
+    }
 
     // Opslaan van nieuwsbericht
     const newsForm = document.getElementById("newsForm");
