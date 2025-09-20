@@ -38,12 +38,10 @@
     
     let currentUserId = null;
 
-    // Functie die wordt aangeroepen door de inlogknop
-    window.handleLogin = async () => {
-        loginMessage.textContent = "⏳ Bezig met inloggen...";
-        loginMessage.style.color = "#4a5568";
+    // Functie voor het inloggen
+    const handleLogin = async () => {
         try {
-            console.log("Login-knop geklikt.");
+            console.log("Automatisch inloggen gestart.");
             if (initialAuthToken) {
                 await signInWithCustomToken(auth, initialAuthToken);
             } else {
@@ -55,13 +53,15 @@
             loginMessage.style.color = "#e53e3e";
         }
     };
+    
+    // Start het inlogproces automatisch zodra de pagina is geladen
+    window.onload = handleLogin;
 
     // Firebase Authenticatie en data-laden
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             currentUserId = user.uid;
             console.log(`Gebruiker succesvol ingelogd met UID: ${currentUserId}`);
-            // Toon de userId in de UI (belangrijk voor delen in collaboratieve apps)
             userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
             
             loginSection.style.display = "none";
@@ -85,7 +85,6 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                         // Aangepaste modal voor bevestiging (vervangt alert/confirm)
                          showCustomModal("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?", async () => {
                              await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
                          });
@@ -110,7 +109,6 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                        // Aangepaste modal voor bevestiging
                         showCustomModal("Weet u zeker dat u dit document wilt verwijderen?", async () => {
                              await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
                         });
@@ -135,7 +133,6 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                        // Aangepaste modal voor bevestiging
                         showCustomModal("Weet u zeker dat u deze video wilt verwijderen?", async () => {
                              await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
                         });
@@ -316,8 +313,7 @@
   <!-- Login-sectie -->
   <div id="loginSection" class="login-container">
     <h1>Welkom bij het JVC Redactie Dashboard</h1>
-    <button id="loginBtn" onclick="handleLogin()">Inloggen als Redacteur</button>
-    <p id="loginMessage" class="message"></p>
+    <p id="loginMessage" class="message">Bezig met inloggen...</p>
   </div>
 
   <!-- Dashboard-sectie -->
