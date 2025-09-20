@@ -34,10 +34,27 @@
     const docsSection = document.getElementById("docsSection");
     const videosSection = document.getElementById("videosSection");
     const userIdDisplay = document.getElementById("userIdDisplay");
-    const loginBtn = document.getElementById("loginBtn");
     const loginMessage = document.getElementById("loginMessage");
     
     let currentUserId = null;
+
+    // Functie die wordt aangeroepen door de inlogknop
+    window.handleLogin = async () => {
+        loginMessage.textContent = "⏳ Bezig met inloggen...";
+        loginMessage.style.color = "#4a5568";
+        try {
+            console.log("Login-knop geklikt.");
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (error) {
+            console.error("Fout bij inloggen:", error);
+            loginMessage.textContent = `❌ Inloggen mislukt: ${error.message}`;
+            loginMessage.style.color = "#e53e3e";
+        }
+    };
 
     // Firebase Authenticatie en data-laden
     onAuthStateChanged(auth, async (user) => {
@@ -153,26 +170,6 @@
         modalCancelBtn.onclick = () => {
             modal.style.display = "none";
         };
-    }
-
-    // Login-knop met addEventListener voor robuustheid
-    if (loginBtn) {
-        loginBtn.addEventListener('click', async () => {
-            loginMessage.textContent = "⏳ Bezig met inloggen...";
-            loginMessage.style.color = "#4a5568";
-            try {
-                console.log("Login-knop geklikt.");
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Fout bij inloggen:", error);
-                loginMessage.textContent = `❌ Inloggen mislukt: ${error.message}`;
-                loginMessage.style.color = "#e53e3e"; // Rode kleur voor fout
-            }
-        });
     }
 
     // Opslaan van nieuwsbericht
@@ -319,7 +316,7 @@
   <!-- Login-sectie -->
   <div id="loginSection" class="login-container">
     <h1>Welkom bij het JVC Redactie Dashboard</h1>
-    <button id="loginBtn">Inloggen als Redacteur</button>
+    <button id="loginBtn" onclick="handleLogin()">Inloggen als Redacteur</button>
     <p id="loginMessage" class="message"></p>
   </div>
 
