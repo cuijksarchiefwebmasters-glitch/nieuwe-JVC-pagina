@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JVC Cuijk Redactie Dashboard</title>
+  <!-- Firebase SDK-scripts (versie 11.6.1) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+    import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    // Globale variabelen van het Canvas-platform
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    // Firebase initialisatie
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+    
+    // Zet log-level op Debug om Firestore-logs te zien
+    setLogLevel('debug');
+
+    // UI-elementen
+    const loginSection = document.getElementById("loginSection");
+    const dashboardSection = document.getElementById("dashboardSection");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const newsSection = document.getElementById("newsSection");
+    const docsSection = document.getElementById("docsSection");
+    const videosSection = document.getElementById("videosSection");
+    const userIdDisplay = document.getElementById("userIdDisplay");
+    
+    let currentUserId = null;
+
+    // Firebase Authenticatie en data-laden
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            currentUserId = user.uid;
+            // Toon de userId in de UI (belangrijk voor delen in collaboratieve apps)
+            userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
+            
+            loginSection.style.display = "none";
+            dashboardSection.style.display = "block";
+
+            // Luister naar real-time updates van nieuwsberichten
+            const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
+            const newsQuery = query(newsCollectionRef);
+            
+            onSnapshot(newsQuery, (snapshot) => {
+                const newsList = document.getElementById("newsList");
+                newsList.innerHTML = "";
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const li = document.createElement("li");
+                    li.innerHTML = `<strong>${data.titel}</strong><br>${data.tekst}<br><small>Sectie: ${data.sectie}</small>`;
+                    
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.textContent = "Verwijderen";
+                    deleteBtn.className = "delete-btn";
+                    deleteBtn.onclick = async () => {
+                         if (confirm("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?")) {
+                            await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
+                        }
+                    };
+                    li.appendChild(deleteBtn);
+                    newsList.appendChild(li);
+                });
+            });
+
+            // Luister naar real-time updates van documenten
+            const docsCollectionRef = collection(db, `/artifacts/${appId}/public/data/documenten`);
+            const docsQuery = query(docsCollectionRef);
+            onSnapshot(docsQuery, (snapshot) => {
+                const docsList = document.getElementById("docsList");
+                docsList.innerHTML = "";
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const li = document.createElement("li");
+                    li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk document</a><br><small>Sectie: ${data.sectie}</small>`;
+                    
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.textContent = "Verwijderen";
+                    deleteBtn.className = "delete-btn";
+                    deleteBtn.onclick = async () => {
+                        if (confirm("Weet u zeker dat u dit document wilt verwijderen?")) {
+                            await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
+                        }
+                    };
+                    li.appendChild(deleteBtn);
+                    docsList.appendChild(li);
+                });
+            });
+
+            // Luister naar real-time updates van video's
+            const videosCollectionRef = collection(db, `/artifacts/${appId}/public/data/videos`);
+            const videosQuery = query(videosCollectionRef);
+            onSnapshot(videosQuery, (snapshot) => {
+                const videosList = document.getElementById("videosList");
+                videosList.innerHTML = "";
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const li = document.createElement("li");
+                    li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk video</a><br><small>Sectie: ${data.sectie}</small>`;
+                    
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.textContent = "Verwijderen";
+                    deleteBtn.className = "delete-btn";
+                    deleteBtn.onclick = async () => {
+                        if (confirm("Weet u zeker dat u deze video wilt verwijderen?")) {
+                            await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
+                        }
+                    };
+                    li.appendChild(deleteBtn);
+                    videosList.appendChild(li);
+                });
+            });
+
+        } else {
+            loginSection.style.display = "block";
+            dashboardSection.style.display = "none";
+        }
+    });
+
+    // Anonieme login of met custom token
+    const loginButton = document.getElementById("loginBtn");
+    loginButton.onclick = async () => {
+        try {
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (error) {
+            console.error("Fout bij inloggen:", error);
+            alert("Fout bij het inloggen. Probeer het opnieuw.");
+        }
+    };
+
+    // Opslaan van nieuwsbericht
+    const newsForm = document.getElementById("newsForm");
+    newsForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const titel = document.getElementById("titel").value;
+        const tekst = document.getElementById("tekst").value;
+        const sectie = document.getElementById("sectie").value;
+        const msg = document.getElementById("newsMessage");
+
+        msg.innerText = "⏳ Bezig met opslaan...";
+        try {
+            const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/nieuws`), {
+                titel: titel,
+                tekst: tekst,
+                sectie: sectie,
+                timestamp: serverTimestamp()
+            });
+            msg.innerText = "✅ Nieuwsbericht succesvol opgeslagen!";
+            newsForm.reset();
+        } catch (error) {
+            console.error("Fout bij het opslaan van het nieuwsbericht:", error);
+            msg.innerText = "❌ Fout bij het opslaan. Probeer het opnieuw.";
+        }
+    };
+
+    // Functie voor het uploaden naar Firebase Storage
+    const uploadToStorage = async (file) => {
+        const storageRef = ref(storage, `${appId}/${file.name}`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
+    };
+
+    // Functie voor het opslaan van file metadata in Firestore
+    const saveFileMetadata = async (url, type, sectie, naam) => {
+        const collectionPath = `/artifacts/${appId}/public/data/${type}en`;
+        await addDoc(collection(db, collectionPath), {
+            url: url,
+            naam: naam,
+            sectie: sectie,
+            timestamp: serverTimestamp()
+        });
+    };
+
+    // Event listener voor het uploaden van documenten
+    document.getElementById("docUploadForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const docfile = document.getElementById("docfile").files[0];
+        const sectie = document.getElementById("docsectie").value;
+        const msg = document.getElementById("docMessage");
+
+        if (!docfile) {
+            msg.innerText = "❌ Selecteer een document om te uploaden.";
+            return;
+        }
+
+        msg.innerText = "⏳ Bezig met uploaden...";
+        try {
+            const fileUrl = await uploadToStorage(docfile);
+            await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
+            msg.innerText = "✅ Document succesvol geüpload!";
+        } catch (error) {
+            console.error("Fout bij het uploaden van het document:", error);
+            msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+        }
+    };
+
+    // Event listener voor het uploaden van video's
+    document.getElementById("videoUploadForm").onsubmit = async (e) => {
+        e.preventDefault();
+        const videofile = document.getElementById("videofile").files[0];
+        const sectie = document.getElementById("videosectie").value;
+        const msg = document.getElementById("videoMessage");
+
+        if (!videofile) {
+            msg.innerText = "❌ Selecteer een video om te uploaden.";
+            return;
+        }
+
+        msg.innerText = "⏳ Bezig met uploaden...";
+        try {
+            const fileUrl = await uploadToStorage(videofile);
+            await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
+            msg.innerText = "✅ Video succesvol geüpload!";
+        } catch (error) {
+            console.error("Fout bij het uploaden van de video:", error);
+            msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+        }
+    };
+
+    // Logout-knop
+    logoutBtn.onclick = () => signOut(auth);
+
+  </script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #333; }
+    header { background: #c00; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    header img { height: 50px; }
+    header button { background: white; color: #c00; padding: 0.5rem 1rem; border: none; border-radius: 25px; cursor: pointer; font-weight: bold; transition: background-color 0.3s; }
+    header button:hover { background-color: #f5f5f5; }
+    main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { color: #c00; text-align: center; margin-bottom: 2rem; }
+    h2 { color: #c00; border-bottom: 2px solid #ddd; padding-bottom: 0.5rem; margin-top: 2rem; }
+    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+    .login-container { text-align: center; padding: 3rem; }
+    .login-container button { padding: 1rem 2rem; font-size: 1.2rem; }
+    form { display: flex; flex-direction: column; }
+    label { font-weight: bold; margin-top: 1rem; margin-bottom: 0.5rem; }
+    input, textarea, select { width: 100%; padding: 0.8rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #c00; color: white; padding: 0.8rem; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; }
+    button:hover { background-color: #a00; }
+    .message { font-weight: bold; margin-top: 0.5rem; text-align: center; }
+    .data-list { list-style: none; padding: 0; }
+    .data-list li { background: #f9f9f9; border: 1px solid #eee; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; word-break: break-word; }
+    .data-list li a { color: #c00; text-decoration: none; }
+    .data-list li a:hover { text-decoration: underline; }
+    .delete-btn { background: #dc3545; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; margin-left: 1rem; transition: background-color 0.3s; }
+    .delete-btn:hover { background-color: #c82333; }
+    #userIdDisplay { font-size: 0.8rem; color: #fff; }
+    
+    /* Media queries voor responsiviteit */
+    @media (max-width: 600px) {
+      header img { height: 40px; }
+      header button { padding: 0.4rem 0.8rem; }
+      main { margin: 1rem auto; padding: 0 0.5rem; }
+      h1 { font-size: 1.5rem; }
+      .container { padding: 1rem; }
+      .login-container button { padding: 0.8rem 1.5rem; font-size: 1rem; }
+      .data-list li { flex-direction: column; align-items: flex-start; }
+      .data-list li .delete-btn { margin-left: 0; margin-top: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Login-sectie -->
+  <div id="loginSection" class="login-container">
+    <h1>Welkom bij het JVC Redactie Dashboard</h1>
+    <button id="loginBtn">Inloggen als Redacteur</button>
+  </div>
+
+  <!-- Dashboard-sectie -->
+  <div id="dashboardSection" style="display: none;">
+    <header>
+      <img src="JVC Cuijk.png" alt="JVC Cuijk Logo" />
+      <span id="userIdDisplay"></span>
+      <button id="logoutBtn">Uitloggen</button>
+    </header>
+
+    <main>
+      <h1>JVC Redactie Dashboard</h1>
+
+      <!-- Nieuwsberichten -->
+      <div id="newsSection" class="container">
+        <h2>Nieuwsberichten</h2>
+        <form id="newsForm">
+          <label for="titel">Titel:</label>
+          <input type="text" id="titel" required />
+          
+          <label for="tekst">Tekst:</label>
+          <textarea id="tekst" rows="5" required></textarea>
+          
+          <label for="sectie">Sectie:</label>
+          <select id="sectie" required>
+            <option value="nieuws">Nieuws</option>
+            <option value="wedstrijden">Wedstrijden</option>
+            <option value="evenementen">Evenementen</option>
+          </select>
+          
+          <button type="submit">Nieuwsbericht plaatsen</button>
+          <p id="newsMessage" class="message"></p>
+        </form>
+        <h3>Gepubliceerde berichten</h3>
+        <ul id="newsList" class="data-list"></ul>
+      </div>
+
+      <!-- Documenten -->
+      <div id="docsSection" class="container">
+        <h2>Documenten</h2>
+        <form id="docUploadForm">
+          <label for="docfile">Document (.pdf, .doc, etc.):</label>
+          <input type="file" id="docfile" required />
+          
+          <label for="docsectie">Sectie:</label>
+          <select id="docsectie" required>
+            <option value="algemeen">Algemeen</option>
+            <option value="regels">Regels</option>
+          </select>
+          
+          <button type="submit">Document uploaden</button>
+          <p id="docMessage" class="message"></p>
+        </form>
+        <h3>Gepubliceerde documenten</h3>
+        <ul id="docsList" class="data-list"></ul>
+      </div>
+
+      <!-- Video's -->
+      <div id="videosSection" class="container">
+        <h2>Video's</h2>
+        <form id="videoUploadForm">
+          <label for="videofile">Video (.mp4, etc.):</label>
+          <input type="file" id="videofile" accept="video/*" required />
+          
+          <label for="videosectie">Sectie:</label>
+          <select id="videosectie" required>
+            <option value="wedstrijdbeelden">Wedstrijdbeelden</option>
+            <option value="interviews">Interviews</option>
+          </select>
+          
+          <button type="submit">Video uploaden</button>
+          <p id="videoMessage" class="message"></p>
+        </form>
+        <h3>Gepubliceerde video's</h3>
+        <ul id="videosList" class="data-list"></ul>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
