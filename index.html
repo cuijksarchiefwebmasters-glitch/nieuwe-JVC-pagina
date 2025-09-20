@@ -50,6 +50,7 @@
             loginSection.style.display = "none";
             dashboardSection.style.display = "block";
             loginMessage.textContent = "✅ Inloggen succesvol! Je wordt nu doorgestuurd.";
+            loginMessage.style.color = "#28a745"; // Groene kleur voor succes
 
             // Luister naar real-time updates van nieuwsberichten
             const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
@@ -166,11 +167,10 @@
                 } else {
                     await signInAnonymously(auth);
                 }
-                // AuthStateChanged zal de UI update na succes
             } catch (error) {
                 console.error("Fout bij inloggen:", error);
-                loginMessage.textContent = `❌ Fout bij inloggen: ${error.message}`;
-                loginMessage.style.color = "#e53e3e";
+                loginMessage.textContent = `❌ Inloggen mislukt: ${error.message}`;
+                loginMessage.style.color = "#e53e3e"; // Rode kleur voor fout
             }
         });
     }
