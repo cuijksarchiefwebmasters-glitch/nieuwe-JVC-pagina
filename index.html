@@ -190,7 +190,20 @@
 
     // Globale variabelen van het Canvas-platform
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    let firebaseConfig;
+    try {
+        firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        if (!firebaseConfig.projectId) {
+            updateStatus("❌ FOUT: 'projectId' ontbreekt in de Firebase-configuratie. Initialisatie mislukt.", true);
+            throw new Error("Missing projectId");
+        }
+        updateStatus("✅ 'firebaseConfig' is correct geladen en bevat 'projectId'.");
+    } catch (error) {
+        updateStatus(`❌ FOUT bij het verwerken van de Firebase-configuratie: ${error.message}`, true);
+        // Voeg hier een placeholder object toe om te voorkomen dat de app crasht op de volgende regel.
+        firebaseConfig = {};
+    }
+
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
     // UI-elementen
