@@ -197,7 +197,7 @@
         try {
             firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
             if (!firebaseConfig.projectId) {
-                updateStatus("❌ FOUT: 'projectId' ontbreekt in de Firebase-configuratie. Initialisatie mislukt.", true);
+                updateStatus("❌ FOUT: 'projectId' ontbreekt in de Firebase-configuratie. De applicatie stopt nu.", true);
                 return;
             }
             updateStatus("✅ 'firebaseConfig' is correct geladen en bevat 'projectId'.");
