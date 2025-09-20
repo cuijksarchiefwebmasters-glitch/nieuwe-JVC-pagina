@@ -161,14 +161,33 @@
     </div>
   </div>
   
-  <!-- Firebase SDK-scripts (versie 11.6.1) -->
+  <!-- JavaScript-code voor inloggen en diagnostiek -->
   <script type="module">
+    // Functie voor het updaten van het logboek
+    const statusLog = document.getElementById("statusLog");
+    const updateStatus = (message, isError = false) => {
+        const li = document.createElement("li");
+        const timestamp = new Date().toLocaleTimeString();
+        li.textContent = `[${timestamp}] ${message}`;
+        if (isError) {
+            li.style.color = "#dc3545";
+        } else {
+            li.style.color = "#28a745";
+        }
+        statusLog.appendChild(li);
+        statusLog.scrollTop = statusLog.scrollHeight;
+    };
+    
+    // START: Diagnostische Pre-Flight Check
+    updateStatus("🚀 Beginnen met diagnostische controle...");
+
+    // Laden van Firebase SDK's
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot, serverTimestamp, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    
+
     // Globale variabelen van het Canvas-platform
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
@@ -180,23 +199,9 @@
     const logoutBtn = document.getElementById("logoutBtn");
     const userIdDisplay = document.getElementById("userIdDisplay");
     const loginMessage = document.getElementById("loginMessage");
-    const statusLog = document.getElementById("statusLog");
     
     let currentUserId = null;
-
-    // Functie voor het updaten van het logboek
-    const updateStatus = (message, isError = false) => {
-        const li = document.createElement("li");
-        const timestamp = new Date().toLocaleTimeString();
-        li.textContent = `[${timestamp}] ${message}`;
-        if (isError) {
-            li.style.color = "#dc3545";
-        } else {
-            li.style.color = "#28a745";
-        }
-        statusLog.appendChild(li);
-        statusLog.scrollTop = statusLog.scrollHeight; // Scroll naar de onderkant
-    };
+    let app, db, auth, storage;
 
     // Functie voor het inloggen
     const handleLogin = async () => {
@@ -215,107 +220,110 @@
     };
 
     // Firebase initialisatie
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const storage = getStorage(app);
+    try {
+        app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        storage = getStorage(app);
+        
+        setLogLevel('debug');
+        updateStatus("✅ Firebase is geïnitialiseerd.");
+        
+        // Nu kunnen we de login starten en de auth listener toevoegen
+        handleLogin();
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                updateStatus("✅ Inloggen succesvol.");
+                userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
+                
+                loginSection.style.display = "none";
+                dashboardSection.style.display = "block";
+
+                // Luister naar real-time updates van nieuwsberichten
+                const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
+                const newsQuery = query(newsCollectionRef);
+                onSnapshot(newsQuery, (snapshot) => {
+                    const newsList = document.getElementById("newsList");
+                    newsList.innerHTML = "";
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const li = document.createElement("li");
+                        li.innerHTML = `<strong>${data.titel}</strong><br>${data.tekst}<br><small>Sectie: ${data.sectie}</small>`;
+                        
+                        const deleteBtn = document.createElement("button");
+                        deleteBtn.textContent = "Verwijderen";
+                        deleteBtn.className = "delete-btn";
+                        deleteBtn.onclick = async () => {
+                             showCustomModal("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?", async () => {
+                                 await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
+                             });
+                        };
+                        li.appendChild(deleteBtn);
+                        newsList.appendChild(li);
+                    });
+                });
+
+                // Luister naar real-time updates van documenten
+                const docsCollectionRef = collection(db, `/artifacts/${appId}/public/data/documenten`);
+                const docsQuery = query(docsCollectionRef);
+                onSnapshot(docsQuery, (snapshot) => {
+                    const docsList = document.getElementById("docsList");
+                    docsList.innerHTML = "";
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const li = document.createElement("li");
+                        li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk document</a><br><small>Sectie: ${data.sectie}</small>`;
+                        
+                        const deleteBtn = document.createElement("button");
+                        deleteBtn.textContent = "Verwijderen";
+                        deleteBtn.className = "delete-btn";
+                        deleteBtn.onclick = async () => {
+                            showCustomModal("Weet u zeker dat u dit document wilt verwijderen?", async () => {
+                                 await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
+                            });
+                        };
+                        li.appendChild(deleteBtn);
+                        docsList.appendChild(li);
+                    });
+                });
+
+                // Luister naar real-time updates van video's
+                const videosCollectionRef = collection(db, `/artifacts/${appId}/public/data/videos`);
+                const videosQuery = query(videosCollectionRef);
+                onSnapshot(videosQuery, (snapshot) => {
+                    const videosList = document.getElementById("videosList");
+                    videosList.innerHTML = "";
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        const li = document.createElement("li");
+                        li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk video</a><br><small>Sectie: ${data.sectie}</small>`;
+                        
+                        const deleteBtn = document.createElement("button");
+                        deleteBtn.textContent = "Verwijderen";
+                        deleteBtn.className = "delete-btn";
+                        deleteBtn.onclick = async () => {
+                            showCustomModal("Weet u zeker dat u deze video wilt verwijderen?", async () => {
+                                 await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
+                            });
+                        };
+                        li.appendChild(deleteBtn);
+                        videosList.appendChild(li);
+                    });
+                });
+
+            } else {
+                updateStatus("Geen gebruiker ingelogd.", true);
+                loginSection.style.display = "block";
+                dashboardSection.style.display = "none";
+            }
+        });
+
+    } catch (error) {
+        updateStatus(`❌ Fout bij initialisatie van Firebase: ${error.message}`, true);
+    }
     
-    // Zet log-level op Debug om Firestore-logs te zien
-    setLogLevel('debug');
-    updateStatus("✅ Firebase is geïnitialiseerd.");
-
-    // Start het inlogproces direct
-    handleLogin();
-
-    // Firebase Authenticatie en data-laden
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            currentUserId = user.uid;
-            updateStatus("✅ Inloggen succesvol.");
-            userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
-            
-            loginSection.style.display = "none";
-            dashboardSection.style.display = "block";
-
-            // Luister naar real-time updates van nieuwsberichten
-            const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
-            const newsQuery = query(newsCollectionRef);
-            onSnapshot(newsQuery, (snapshot) => {
-                const newsList = document.getElementById("newsList");
-                newsList.innerHTML = "";
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const li = document.createElement("li");
-                    li.innerHTML = `<strong>${data.titel}</strong><br>${data.tekst}<br><small>Sectie: ${data.sectie}</small>`;
-                    
-                    const deleteBtn = document.createElement("button");
-                    deleteBtn.textContent = "Verwijderen";
-                    deleteBtn.className = "delete-btn";
-                    deleteBtn.onclick = async () => {
-                         showCustomModal("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?", async () => {
-                             await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
-                         });
-                    };
-                    li.appendChild(deleteBtn);
-                    newsList.appendChild(li);
-                });
-            });
-
-            // Luister naar real-time updates van documenten
-            const docsCollectionRef = collection(db, `/artifacts/${appId}/public/data/documenten`);
-            const docsQuery = query(docsCollectionRef);
-            onSnapshot(docsQuery, (snapshot) => {
-                const docsList = document.getElementById("docsList");
-                docsList.innerHTML = "";
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const li = document.createElement("li");
-                    li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk document</a><br><small>Sectie: ${data.sectie}</small>`;
-                    
-                    const deleteBtn = document.createElement("button");
-                    deleteBtn.textContent = "Verwijderen";
-                    deleteBtn.className = "delete-btn";
-                    deleteBtn.onclick = async () => {
-                        showCustomModal("Weet u zeker dat u dit document wilt verwijderen?", async () => {
-                             await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
-                        });
-                    };
-                    li.appendChild(deleteBtn);
-                    docsList.appendChild(li);
-                });
-            });
-
-            // Luister naar real-time updates van video's
-            const videosCollectionRef = collection(db, `/artifacts/${appId}/public/data/videos`);
-            const videosQuery = query(videosCollectionRef);
-            onSnapshot(videosQuery, (snapshot) => {
-                const videosList = document.getElementById("videosList");
-                videosList.innerHTML = "";
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const li = document.createElement("li");
-                    li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk video</a><br><small>Sectie: ${data.sectie}</small>`;
-                    
-                    const deleteBtn = document.createElement("button");
-                    deleteBtn.textContent = "Verwijderen";
-                    deleteBtn.className = "delete-btn";
-                    deleteBtn.onclick = async () => {
-                        showCustomModal("Weet u zeker dat u deze video wilt verwijderen?", async () => {
-                             await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
-                        });
-                    };
-                    li.appendChild(deleteBtn);
-                    videosList.appendChild(li);
-                });
-            });
-
-        } else {
-            updateStatus("Geen gebruiker ingelogd.", true);
-            loginSection.style.display = "block";
-            dashboardSection.style.display = "none";
-        }
-    });
-
     // Functie voor de aangepaste modal
     function showCustomModal(message, onConfirm) {
         const modal = document.getElementById('customModal');
@@ -338,28 +346,30 @@
 
     // Opslaan van nieuwsbericht
     const newsForm = document.getElementById("newsForm");
-    newsForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const titel = document.getElementById("titel").value;
-        const tekst = document.getElementById("tekst").value;
-        const sectie = document.getElementById("sectie").value;
-        const msg = document.getElementById("newsMessage");
+    if(newsForm) {
+        newsForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const titel = document.getElementById("titel").value;
+            const tekst = document.getElementById("tekst").value;
+            const sectie = document.getElementById("sectie").value;
+            const msg = document.getElementById("newsMessage");
 
-        msg.innerText = "⏳ Bezig met opslaan...";
-        try {
-            const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/nieuws`), {
-                titel: titel,
-                tekst: tekst,
-                sectie: sectie,
-                timestamp: serverTimestamp()
-            });
-            msg.innerText = "✅ Nieuwsbericht succesvol opgeslagen!";
-            newsForm.reset();
-        } catch (error) {
-            console.error("Fout bij het opslaan van het nieuwsbericht:", error);
-            msg.innerText = "❌ Fout bij het opslaan. Probeer het opnieuw.";
-        }
-    };
+            msg.innerText = "⏳ Bezig met opslaan...";
+            try {
+                const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/nieuws`), {
+                    titel: titel,
+                    tekst: tekst,
+                    sectie: sectie,
+                    timestamp: serverTimestamp()
+                });
+                msg.innerText = "✅ Nieuwsbericht succesvol opgeslagen!";
+                newsForm.reset();
+            } catch (error) {
+                console.error("Fout bij het opslaan van het nieuwsbericht:", error);
+                msg.innerText = "❌ Fout bij het opslaan. Probeer het opnieuw.";
+            }
+        };
+    }
 
     // Functie voor het uploaden naar Firebase Storage
     const uploadToStorage = async (file) => {
@@ -380,54 +390,63 @@
     };
 
     // Event listener voor het uploaden van documenten
-    document.getElementById("docUploadForm").onsubmit = async (e) => {
-        e.preventDefault();
-        const docfile = document.getElementById("docfile").files[0];
-        const sectie = document.getElementById("docsectie").value;
-        const msg = document.getElementById("docMessage");
+    const docUploadForm = document.getElementById("docUploadForm");
+    if(docUploadForm) {
+      docUploadForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const docfile = document.getElementById("docfile").files[0];
+          const sectie = document.getElementById("docsectie").value;
+          const msg = document.getElementById("docMessage");
+  
+          if (!docfile) {
+              msg.innerText = "❌ Selecteer een document om te uploaden.";
+              return;
+          }
+  
+          msg.innerText = "⏳ Bezig met uploaden...";
+          try {
+              const fileUrl = await uploadToStorage(docfile);
+              await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
+              msg.innerText = "✅ Document succesvol geüpload!";
+          } catch (error) {
+              console.error("Fout bij het uploaden van het document:", error);
+              msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+          }
+      };
+    }
 
-        if (!docfile) {
-            msg.innerText = "❌ Selecteer een document om te uploaden.";
-            return;
-        }
-
-        msg.innerText = "⏳ Bezig met uploaden...";
-        try {
-            const fileUrl = await uploadToStorage(docfile);
-            await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
-            msg.innerText = "✅ Document succesvol geüpload!";
-        } catch (error) {
-            console.error("Fout bij het uploaden van het document:", error);
-            msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-        }
-    };
 
     // Event listener voor het uploaden van video's
-    document.getElementById("videoUploadForm").onsubmit = async (e) => {
-        e.preventDefault();
-        const videofile = document.getElementById("videofile").files[0];
-        const sectie = document.getElementById("videosectie").value;
-        const msg = document.getElementById("videoMessage");
+    const videoUploadForm = document.getElementById("videoUploadForm");
+    if(videoUploadForm) {
+      videoUploadForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const videofile = document.getElementById("videofile").files[0];
+          const sectie = document.getElementById("videosectie").value;
+          const msg = document.getElementById("videoMessage");
+  
+          if (!videofile) {
+              msg.innerText = "❌ Selecteer een video om te uploaden.";
+              return;
+          }
+  
+          msg.innerText = "⏳ Bezig met uploaden...";
+          try {
+              const fileUrl = await uploadToStorage(videofile);
+              await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
+              msg.innerText = "✅ Video succesvol geüpload!";
+          } catch (error) {
+              console.error("Fout bij het uploaden van de video:", error);
+              msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+          }
+      };
+    }
 
-        if (!videofile) {
-            msg.innerText = "❌ Selecteer een video om te uploaden.";
-            return;
-        }
-
-        msg.innerText = "⏳ Bezig met uploaden...";
-        try {
-            const fileUrl = await uploadToStorage(videofile);
-            await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
-            msg.innerText = "✅ Video succesvol geüpload!";
-        } catch (error) {
-            console.error("Fout bij het uploaden van de video:", error);
-            msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-        }
-    };
 
     // Logout-knop
-    logoutBtn.onclick = () => signOut(auth);
-
+    if (logoutBtn) {
+        logoutBtn.onclick = () => signOut(auth);
+    }
   </script>
 </body>
 </html>
