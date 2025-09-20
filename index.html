@@ -8,7 +8,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot, orderBy, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     
@@ -34,6 +34,8 @@
     const docsSection = document.getElementById("docsSection");
     const videosSection = document.getElementById("videosSection");
     const userIdDisplay = document.getElementById("userIdDisplay");
+    const loginBtn = document.getElementById("loginBtn");
+    const loginMessage = document.getElementById("loginMessage");
     
     let currentUserId = null;
 
@@ -41,6 +43,7 @@
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             currentUserId = user.uid;
+            console.log(`Gebruiker succesvol ingelogd met UID: ${currentUserId}`);
             // Toon de userId in de UI (belangrijk voor delen in collaboratieve apps)
             userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
             
@@ -63,9 +66,10 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                         if (confirm("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?")) {
-                            await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
-                        }
+                         // Aangepaste modal voor bevestiging (vervangt alert/confirm)
+                         showCustomModal("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?", async () => {
+                             await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
+                         });
                     };
                     li.appendChild(deleteBtn);
                     newsList.appendChild(li);
@@ -87,9 +91,10 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                        if (confirm("Weet u zeker dat u dit document wilt verwijderen?")) {
-                            await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
-                        }
+                        // Aangepaste modal voor bevestiging
+                        showCustomModal("Weet u zeker dat u dit document wilt verwijderen?", async () => {
+                             await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
+                        });
                     };
                     li.appendChild(deleteBtn);
                     docsList.appendChild(li);
@@ -111,9 +116,10 @@
                     deleteBtn.textContent = "Verwijderen";
                     deleteBtn.className = "delete-btn";
                     deleteBtn.onclick = async () => {
-                        if (confirm("Weet u zeker dat u deze video wilt verwijderen?")) {
-                            await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
-                        }
+                        // Aangepaste modal voor bevestiging
+                        showCustomModal("Weet u zeker dat u deze video wilt verwijderen?", async () => {
+                             await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
+                        });
                     };
                     li.appendChild(deleteBtn);
                     videosList.appendChild(li);
@@ -121,25 +127,48 @@
             });
 
         } else {
+            console.log("Geen gebruiker ingelogd.");
             loginSection.style.display = "block";
             dashboardSection.style.display = "none";
         }
     });
 
-    // Anonieme login of met custom token
-    const loginButton = document.getElementById("loginBtn");
-    loginButton.onclick = async () => {
+    // Functie voor de aangepaste modal
+    function showCustomModal(message, onConfirm) {
+        const modal = document.getElementById('customModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+        modalMessage.textContent = message;
+        modal.style.display = "block";
+
+        modalConfirmBtn.onclick = () => {
+            onConfirm();
+            modal.style.display = "none";
+        };
+
+        modalCancelBtn.onclick = () => {
+            modal.style.display = "none";
+        };
+    }
+
+    // Login-knop met addEventListener voor robuustheid
+    loginBtn.addEventListener('click', async () => {
+        loginMessage.textContent = "⏳ Bezig met inloggen...";
         try {
+            console.log("Login-knop geklikt.");
             if (initialAuthToken) {
                 await signInWithCustomToken(auth, initialAuthToken);
             } else {
                 await signInAnonymously(auth);
             }
+            loginMessage.textContent = "✅ Inloggen succesvol! Je wordt nu doorgestuurd.";
         } catch (error) {
             console.error("Fout bij inloggen:", error);
-            alert("Fout bij het inloggen. Probeer het opnieuw.");
+            loginMessage.textContent = `❌ Fout bij inloggen: ${error.message}`;
         }
-    };
+    });
 
     // Opslaan van nieuwsbericht
     const newsForm = document.getElementById("newsForm");
@@ -260,6 +289,14 @@
     .delete-btn:hover { background-color: #c82333; }
     #userIdDisplay { font-size: 0.8rem; color: #fff; }
     
+    /* Aangepaste modal voor bevestiging */
+    .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+    .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 400px; border-radius: 8px; text-align: center; }
+    .modal-buttons { margin-top: 20px; }
+    .modal-buttons button { margin: 0 10px; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+    #modalConfirmBtn { background-color: #c00; color: white; }
+    #modalCancelBtn { background-color: #ccc; color: black; }
+    
     /* Media queries voor responsiviteit */
     @media (max-width: 600px) {
       header img { height: 40px; }
@@ -278,6 +315,7 @@
   <div id="loginSection" class="login-container">
     <h1>Welkom bij het JVC Redactie Dashboard</h1>
     <button id="loginBtn">Inloggen als Redacteur</button>
+    <p id="loginMessage" class="message"></p>
   </div>
 
   <!-- Dashboard-sectie -->
@@ -355,6 +393,17 @@
         <ul id="videosList" class="data-list"></ul>
       </div>
     </main>
+  </div>
+  
+  <!-- Aangepaste modal voor bevestiging -->
+  <div id="customModal" class="modal">
+    <div class="modal-content">
+      <p id="modalMessage"></p>
+      <div class="modal-buttons">
+        <button id="modalConfirmBtn">Bevestigen</button>
+        <button id="modalCancelBtn">Annuleren</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>
