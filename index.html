@@ -7,14 +7,12 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     // Globale variabelen van de Canvas omgeving
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
     let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
     // BELANGRIJK: Als u dit lokaal draait, vervang dan de API-sleutel hieronder
@@ -27,52 +25,31 @@
       };
     }
 
-    let db, auth, storage, userId;
+    let db, storage;
+    // Genereer een unieke, anonieme ID voor elke sessie
+    const userId = 'anonieme-' + crypto.randomUUID(); 
     const dashboard = document.getElementById('dashboard');
     const loadingMessage = document.getElementById('loadingMessage');
-    const userIdDisplay = document.getElementById('userIdDisplay');
-
+    
     window.onload = async () => {
       setLogLevel('debug');
       try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
-        auth = getAuth(app);
         storage = getStorage(app);
 
-        loadingMessage.innerText = "⏳ Bezig met inloggen...";
-        
-        await handleAuthentication();
+        // Geen inloggen meer, dus direct het dashboard tonen
+        loadingMessage.style.display = 'none';
+        dashboard.style.display = 'block';
+        startListeningForArticles();
         
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
         loadingMessage.innerText = `❌ FOUT: Kon geen verbinding maken met de database. Controleer uw API-sleutel en probeer het opnieuw.`;
         loadingMessage.style.color = "red";
+        loadingMessage.style.display = 'block';
       }
     };
-
-    async function handleAuthentication() {
-      try {
-        if (initialAuthToken) {
-          const userCredential = await signInWithCustomToken(auth, initialAuthToken);
-          userId = userCredential.user.uid;
-        } else {
-          const userCredential = await signInAnonymously(auth);
-          userId = userCredential.user.uid;
-        }
-
-        console.log("Gebruiker succesvol aangemeld:", userId);
-        userIdDisplay.innerText = `Ingelogd als: ${userId}`;
-        loadingMessage.style.display = 'none';
-        dashboard.style.display = 'block';
-        startListeningForArticles();
-
-      } catch (signInError) {
-        console.error("Fout bij aanmelden:", signInError);
-        loadingMessage.innerText = "❌ FOUT: Inloggen mislukt. Probeer het opnieuw.";
-        loadingMessage.style.color = "red";
-      }
-    }
 
     // Functie om te uploaden naar Firebase Storage
     async function uploadToStorage(file) {
@@ -85,7 +62,7 @@
 
     // Functie om metadata op te slaan in Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
-      if (!db || !userId) throw new Error("Firestore of gebruiker is niet geïnitialiseerd.");
+      if (!db) throw new Error("Firestore is niet geïnitialiseerd.");
       await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
         filename,
         fileUrl,
@@ -179,7 +156,7 @@
 
       msg.innerText = "⏳ Bezig met uploaden...";
       try {
-        if (!db || !userId) throw new Error("Database of gebruiker is niet geïnitialiseerd.");
+        if (!db) throw new Error("Database is niet geïnitialiseerd.");
         await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
           titel,
           inhoud,
@@ -325,7 +302,7 @@
 <body>
   <header>
     <img src="https://placehold.co/150x50/ff0000/ffffff?text=JVC+Cuijk" alt="JVC Cuijk Logo" />
-    <span id="userIdDisplay" class="text-xs text-red-100">Laden...</span>
+    <span class="text-xs text-red-100">Anonieme Gebruiker</span>
   </header>
 
   <main>
