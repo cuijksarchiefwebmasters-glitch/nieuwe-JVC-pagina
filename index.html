@@ -8,7 +8,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, query, serverTimestamp, getDocs, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -17,23 +17,16 @@
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
     let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
-    // Zorg ervoor dat de configuratie correct is.
-    if (!firebaseConfig) {
-      firebaseConfig = {};
-    }
-    // BELANGRIJK: Vervang "YOUR_API_KEY_HERE" met je echte Firebase Web API-sleutel.
-    // Je vindt deze in je Firebase Projectinstellingen > Algemeen > 'Jouw apps'.
-    if (!firebaseConfig.apiKey) {
-      firebaseConfig.apiKey = "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk";
-    }
-    if (!firebaseConfig.authDomain) {
-      firebaseConfig.authDomain = "jvc-redactie-databank.firebaseapp.com";
-    }
-    if (!firebaseConfig.projectId) {
-      firebaseConfig.projectId = "jvc-redactie-databank";
-    }
-    if (!firebaseConfig.storageBucket) {
-        firebaseConfig.storageBucket = "jvc-redactie-databank.appspot.com";
+    // BELANGRIJK: Vervang "YOUR_API_KEY_HERE" met uw echte Firebase Web API-sleutel.
+    // U vindt deze in uw Firebase Projectinstellingen > Algemeen > 'Jouw apps'.
+    if (!firebaseConfig || !firebaseConfig.apiKey) {
+      console.warn("Firebase-configuratie niet gevonden of onvolledig. Gebruik van standaardwaarden.");
+      firebaseConfig = {
+        apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk", // <-- VERVANG DEZE REGEL!
+        authDomain: "jvc-redactie-databank.firebaseapp.com",
+        projectId: "jvc-redactie-databank",
+        storageBucket: "jvc-redactie-databank.appspot.com"
+      };
     }
 
     let db, auth, storage, userId;
@@ -50,7 +43,8 @@
         auth = getAuth(app);
         storage = getStorage(app);
 
-        // Luister naar authenticatiestatus
+        loadingMessage.innerText = "⏳ Bezig met inloggen...";
+        
         onAuthStateChanged(auth, (user) => {
           if (user) {
             userId = user.uid;
@@ -77,7 +71,7 @@
 
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
-        loadingMessage.innerText = "❌ FOUT: Er is een onbekende fout opgetreden. Controleer de console voor meer details.";
+        loadingMessage.innerText = `❌ FOUT: Kon geen verbinding maken met de database. Controleer uw API-sleutel en probeer het opnieuw.`;
         loadingMessage.style.color = "red";
       }
     };
@@ -135,7 +129,7 @@
           <p class="text-sm text-gray-500 mt-1">Sectie: ${artikel.sectie || 'Onbekend'}</p>
           <p class="text-sm text-gray-500">Geüpload door: ${artikel.uploadedBy || 'Onbekend'}</p>
           <div class="mt-4 text-gray-700">
-            ${artikel.fileUrl ? `<a href="${artikel.fileUrl}" target="_blank" class="text-blue-500 hover:underline mt-2 inline-block">Bekijk bestand</a>` : 'Geen bestand gekoppeld.'}
+            ${artikel.fileUrl ? `<a href="${artikel.fileUrl}" target="_blank" class="text-blue-500 hover:underline mt-2 inline-block">Bekijk bestand</a>` : ''}
             ${artikel.inhoud ? `<p class="mt-2 text-gray-600">${artikel.inhoud}</p>` : ''}
           </div>
         `;
@@ -143,7 +137,34 @@
       });
     }
 
-    // Event listener voor artikel upload
+    // Algemene functie voor bestandsuploads
+    async function handleFileUpload(formId, fileInputId, sectionSelectId, messageId, type) {
+      const form = document.getElementById(formId);
+      const fileInput = document.getElementById(fileInputId);
+      const sectionSelect = document.getElementById(sectionSelectId);
+      const msgElement = document.getElementById(messageId);
+
+      const file = fileInput.files[0];
+      const sectie = sectionSelect.value;
+      
+      if (!file) {
+        msgElement.innerText = `❌ Selecteer een ${type} om te uploaden.`;
+        return;
+      }
+
+      msgElement.innerText = "⏳ Bezig met uploaden...";
+      try {
+        const fileUrl = await uploadToStorage(file);
+        await saveFileMetadata(fileUrl, type, sectie, file.name);
+        msgElement.innerText = `✅ ${type.charAt(0).toUpperCase() + type.slice(1)} succesvol geüpload!`;
+        form.reset();
+      } catch (error) {
+        console.error(`Fout bij het uploaden van de ${type}:`, error);
+        msgElement.innerText = `❌ Fout bij het uploaden van de ${type}. Probeer het opnieuw.`;
+      }
+    }
+
+    // Event listeners voor alle formulieren
     document.getElementById("artikelUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -170,76 +191,19 @@
       }
     };
 
-    // Event listener voor document upload
-    document.getElementById("docUploadForm").onsubmit = async (e) => {
+    document.getElementById("docUploadForm").onsubmit = (e) => {
       e.preventDefault();
-      const docfile = document.getElementById("docfile").files[0];
-      const sectie = document.getElementById("docsectie").value;
-      const msg = document.getElementById("docMessage");
-
-      if (!docfile) {
-        msg.innerText = "❌ Selecteer een document om te uploaden.";
-        return;
-      }
-
-      msg.innerText = "⏳ Bezig met uploaden...";
-      try {
-        const fileUrl = await uploadToStorage(docfile);
-        await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
-        msg.innerText = "✅ Document succesvol geüpload!";
-        document.getElementById("docUploadForm").reset();
-      } catch (error) {
-        console.error("Fout bij het uploaden van het document:", error);
-        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-      }
+      handleFileUpload('docUploadForm', 'docfile', 'docsectie', 'docMessage', 'document');
     };
 
-    // Event listener voor video upload
-    document.getElementById("videoUploadForm").onsubmit = async (e) => {
+    document.getElementById("videoUploadForm").onsubmit = (e) => {
       e.preventDefault();
-      const videofile = document.getElementById("videofile").files[0];
-      const sectie = document.getElementById("videosectie").value;
-      const msg = document.getElementById("videoMessage");
-
-      if (!videofile) {
-        msg.innerText = "❌ Selecteer een video om te uploaden.";
-        return;
-      }
-
-      msg.innerText = "⏳ Bezig met uploaden...";
-      try {
-        const fileUrl = await uploadToStorage(videofile);
-        await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
-        msg.innerText = "✅ Video succesvol geüpload!";
-        document.getElementById("videoUploadForm").reset();
-      } catch (error) {
-        console.error("Fout bij het uploaden van de video:", error);
-        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-      }
+      handleFileUpload('videoUploadForm', 'videofile', 'videosectie', 'videoMessage', 'video');
     };
 
-    // Event listener voor afbeelding upload
-    document.getElementById("imageUploadForm").onsubmit = async (e) => {
+    document.getElementById("imageUploadForm").onsubmit = (e) => {
       e.preventDefault();
-      const imgfile = document.getElementById("imagefile").files[0];
-      const sectie = document.getElementById("imagesectie").value;
-      const msg = document.getElementById("imageMessage");
-
-      if (!imgfile) {
-        msg.innerText = "❌ Selecteer een afbeelding om te uploaden.";
-        return;
-      }
-
-      msg.innerText = "⏳ Bezig met uploaden...";
-      try {
-        const fileUrl = await uploadToStorage(imgfile);
-        await saveFileMetadata(fileUrl, 'afbeelding', sectie, imgfile.name);
-        msg.innerText = "✅ Afbeelding succesvol geüpload!";
-        document.getElementById("imageUploadForm").reset();
-      } catch (error) {
-        console.error("Fout bij het uploaden van de afbeelding:", error);
-        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-      }
+      handleFileUpload('imageUploadForm', 'imagefile', 'imagesectie', 'imageMessage', 'afbeelding');
     };
   </script>
   <style>
