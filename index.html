@@ -17,10 +17,12 @@
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
     let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
-    // Voeg de API-sleutel en andere ontbrekende instellingen toe aan de configuratie
+    // Zorg ervoor dat de configuratie correct is.
     if (!firebaseConfig) {
       firebaseConfig = {};
     }
+    // BELANGRIJK: Vervang "YOUR_API_KEY_HERE" met je echte Firebase Web API-sleutel.
+    // Je vindt deze in je Firebase Projectinstellingen > Algemeen > 'Jouw apps'.
     if (!firebaseConfig.apiKey) {
       firebaseConfig.apiKey = "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk";
     }
@@ -242,18 +244,19 @@
   </script>
   <style>
     body {
-      font-family: Arial;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       margin: 0;
       background: #f3f4f6;
     }
 
     header {
-      background: red;
+      background: #dc2626; /* red-700 */
       color: white;
       padding: 1rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     header img {
@@ -262,64 +265,78 @@
 
     main {
       max-width: 900px;
-      margin: 1rem auto;
+      margin: 2rem auto;
       padding: 0 1rem;
     }
 
     h2 {
-      color: red;
-      font-weight: bold;
+      color: #b91c1c; /* red-800 */
+      font-weight: 700;
       font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     label {
-      font-weight: bold;
-      margin: 1rem 0 0.3rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
       display: block;
+      color: #1f2937;
     }
 
     input,
     textarea,
     select {
       width: 100%;
-      padding: 0.6rem;
-      margin-top: 0.3rem;
+      padding: 0.75rem;
       box-sizing: border-box;
       border-radius: 8px;
-      border: 1px solid #ddd;
+      border: 1px solid #d1d5db; /* gray-300 */
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: #ef4444; /* red-500 */
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
     }
     
     .btn {
       width: 100%;
       padding: 0.8rem;
-      margin-top: 1rem;
+      margin-top: 2rem;
       box-sizing: border-box;
       border-radius: 8px;
-      background: red;
+      background: #dc2626; /* red-700 */
       color: white;
       border: none;
       cursor: pointer;
-      font-weight: bold;
+      font-weight: 700;
       transition: background-color 0.3s;
+      text-transform: uppercase;
     }
 
     .btn:hover {
-      background-color: #c53030;
+      background-color: #b91c1c; /* red-800 */
     }
     
     .message {
-      font-weight: bold;
-      margin-top: 0.5rem;
+      font-weight: 600;
+      margin-top: 1rem;
       text-align: center;
     }
 
     .section {
       background: white;
-      border: 1px solid #ddd;
-      padding: 1.5rem;
+      border: 1px solid #e5e7eb; /* gray-200 */
+      padding: 2rem;
       margin-bottom: 2rem;
       border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     #dashboard {
@@ -328,10 +345,10 @@
 
     #loadingMessage {
       text-align: center;
-      margin-top: 2rem;
-      font-weight: bold;
-      font-size: 1.2rem;
-      color: #333;
+      margin-top: 5rem;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: #4b5563;
     }
   </style>
 </head>
@@ -339,7 +356,7 @@
 <body>
   <header>
     <img src="https://placehold.co/150x50/ff0000/ffffff?text=JVC+Cuijk" alt="JVC Cuijk Logo" />
-    <span id="userIdDisplay" class="text-xs">Laden...</span>
+    <span id="userIdDisplay" class="text-xs text-red-100">Laden...</span>
   </header>
 
   <main>
@@ -352,11 +369,11 @@
         <h2>Artikel uploaden</h2>
         <form id="artikelUploadForm">
           <label for="titel">Titel:</label>
-          <input type="text" id="titel" name="titel" required />
+          <input type="text" id="titel" name="titel" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500"/>
           <label for="inhoud">Inhoud:</label>
-          <textarea id="inhoud" name="inhoud" rows="4"></textarea>
+          <textarea id="inhoud" name="inhoud" rows="4" class="p-2 border rounded-md focus:ring-2 focus:ring-red-500"></textarea>
           <label for="sectie">Sectie:</label>
-          <select id="sectie" name="sectie" required>
+          <select id="sectie" name="sectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
             <option value="">Selecteer sectie</option>
             <option value="Hoofdverhaal">Hoofdverhaal</option>
             <option value="Nieuws">Nieuws</option>
@@ -373,9 +390,9 @@
         <h2>Document uploaden</h2>
         <form id="docUploadForm">
           <label for="docfile">Kies een document:</label>
-          <input type="file" id="docfile" accept=".pdf,.doc,.docx" required />
+          <input type="file" id="docfile" accept=".pdf,.doc,.docx" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
           <label for="docsectie">Sectie:</label>
-          <select id="docsectie" required>
+          <select id="docsectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
             <option value="">Selecteer sectie</option>
             <option value="Hoofdverhaal">Hoofdverhaal</option>
             <option value="Nieuws">Nieuws</option>
@@ -392,9 +409,9 @@
         <h2>Video uploaden</h2>
         <form id="videoUploadForm">
           <label for="videofile">Kies een video:</label>
-          <input type="file" id="videofile" accept="video/*" required />
+          <input type="file" id="videofile" accept="video/*" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
           <label for="videosectie">Sectie:</label>
-          <select id="videosectie" required>
+          <select id="videosectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
             <option value="">Selecteer sectie</option>
             <option value="Hoofdverhaal">Hoofdverhaal</option>
             <option value="Nieuws">Nieuws</option>
@@ -411,9 +428,9 @@
         <h2>Afbeelding uploaden</h2>
         <form id="imageUploadForm">
           <label for="imagefile">Kies een afbeelding:</label>
-          <input type="file" id="imagefile" accept="image/*" required />
+          <input type="file" id="imagefile" accept="image/*" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
           <label for="imagesectie">Sectie:</label>
-          <select id="imagesectie" required>
+          <select id="imagesectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
             <option value="">Selecteer sectie</option>
             <option value="Hoofdverhaal">Hoofdverhaal</option>
             <option value="Nieuws">Nieuws</option>
