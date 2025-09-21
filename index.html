@@ -63,6 +63,7 @@
     // Functie om te uploaden naar Firebase Storage
     async function uploadToStorage(file) {
       if (!storage) throw new Error("Storage service is niet geïnitialiseerd.");
+      if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor uploaden.");
       const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const fileUrl = await getDownloadURL(snapshot.ref);
@@ -72,7 +73,8 @@
     // Functie om metadata op te slaan in Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
       if (!db) throw new Error("Firestore is niet geïnitialiseerd.");
-      const userId = auth.currentUser ? auth.currentUser.uid : 'onbekend';
+      if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor opslaan.");
+      const userId = auth.currentUser.uid;
       await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
         filename,
         fileUrl,
@@ -99,7 +101,7 @@
         renderArtikelen(artikelen);
       }, (error) => {
         console.error("Fout bij het ophalen van artikelen:", error);
-        document.getElementById('artikelenLijst').innerHTML = `<p class="text-red-500">❌ Fout bij het laden van artikelen. Zorg ervoor dat de database beveiligingsregels openbaar zijn.</p>`;
+        document.getElementById('artikelenLijst').innerHTML = `<p class="text-red-500">❌ Fout bij het laden van artikelen. Controleer de netwerkverbinding en probeer het opnieuw.</p>`;
       });
     }
 
@@ -135,6 +137,12 @@
       const sectionSelect = document.getElementById(sectionSelectId);
       const msgElement = document.getElementById(messageId);
       
+      // Valideer de authenticatie voordat u verdergaat
+      if (!auth.currentUser) {
+        msgElement.innerText = "❌ Fout: U bent niet ingelogd.";
+        return;
+      }
+
       msgElement.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
 
       const file = fileInput.files[0];
@@ -171,11 +179,17 @@
       const sectie = form.sectie.value;
       const msg = document.getElementById("artikelMessage");
       
+      // Valideer de authenticatie voordat u verdergaat
+      if (!auth.currentUser) {
+        msg.innerText = "❌ Fout: U bent niet ingelogd.";
+        return;
+      }
+
       msg.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
       
       try {
         if (!db) throw new Error("Database is niet geïnitialiseerd.");
-        const userId = auth.currentUser ? auth.currentUser.uid : 'onbekend';
+        const userId = auth.currentUser.uid;
         await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
           titel,
           inhoud,
