@@ -35,7 +35,7 @@
     const userIdDisplay = document.getElementById('userIdDisplay');
 
     window.onload = async () => {
-      setLogLevel('debug'); // Voor het debuggen van Firestore
+      setLogLevel('debug');
       
       try {
         const app = initializeApp(firebaseConfig);
@@ -45,6 +45,20 @@
 
         loadingMessage.innerText = "⏳ Bezig met inloggen...";
         
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+          } else {
+            await signInAnonymously(auth);
+          }
+        } catch (signInError) {
+          console.error("Fout bij aanmelden:", signInError);
+          loadingMessage.innerText = "❌ FOUT: Inloggen mislukt. Controleer uw API-sleutel en internetverbinding.";
+          loadingMessage.style.color = "red";
+          return; // Stop verdere uitvoering
+        }
+
+        // Luister naar authenticatiestatus
         onAuthStateChanged(auth, (user) => {
           if (user) {
             userId = user.uid;
@@ -54,24 +68,17 @@
             dashboard.style.display = 'block';
             startListeningForArticles();
           } else {
-            console.log("Geen gebruiker aangemeld. Probeer aan te melden.");
-            try {
-              if (initialAuthToken) {
-                signInWithCustomToken(auth, initialAuthToken);
-              } else {
-                signInAnonymously(auth);
-              }
-            } catch (signInError) {
-              console.error("Fout bij aanmelden:", signInError);
-              loadingMessage.innerText = "❌ FOUT: Fout bij het aanmelden. Probeer de app opnieuw te starten.";
-              loadingMessage.style.color = "red";
-            }
+            // Dit blok wordt ook geactiveerd bij afmelden, maar in dit geval
+            // willen we alleen het dashboard verbergen en een foutmelding tonen.
+            loadingMessage.innerText = "❌ FOUT: Gebruiker is afgemeld of aanmelding mislukt.";
+            loadingMessage.style.display = 'block';
+            dashboard.style.display = 'none';
           }
         });
 
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
-        loadingMessage.innerText = `❌ FOUT: Kon geen verbinding maken met de database. Controleer uw API-sleutel en probeer het opnieuw.`;
+        loadingMessage.innerText = `❌ FOUT: Kon geen verbinding maken met de database.`;
         loadingMessage.style.color = "red";
       }
     };
@@ -416,5 +423,4 @@
     </div>
   </main>
 </body>
-
 </html>
