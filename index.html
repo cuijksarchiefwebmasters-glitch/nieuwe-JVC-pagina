@@ -18,26 +18,20 @@
     let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
     // Voeg de API-sleutel en andere ontbrekende instellingen toe aan de configuratie
-    if (firebaseConfig) {
-      if (!firebaseConfig.apiKey) {
-        firebaseConfig.apiKey = "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk"; 
-      }
-      if (!firebaseConfig.authDomain) {
-        firebaseConfig.authDomain = "jvc-redactie-databank.firebaseapp.com";
-      }
-      if (!firebaseConfig.projectId) {
-        firebaseConfig.projectId = "jvc-redactie-databank";
-      }
-    } else {
-      // Als de configuratie volledig ontbreekt, gebruik een hardgecodeerde versie
-      firebaseConfig = {
-        apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk", 
-        authDomain: "jvc-redactie-databank.firebaseapp.com",
-        projectId: "jvc-redactie-databank",
-        storageBucket: "jvc-redactie-databank.appspot.com",
-        messagingSenderId: "775675536234",
-        appId: "1:775675536234:web:a06128d8d475a8d26efb13",
-      };
+    if (!firebaseConfig) {
+      firebaseConfig = {};
+    }
+    if (!firebaseConfig.apiKey) {
+      firebaseConfig.apiKey = "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk";
+    }
+    if (!firebaseConfig.authDomain) {
+      firebaseConfig.authDomain = "jvc-redactie-databank.firebaseapp.com";
+    }
+    if (!firebaseConfig.projectId) {
+      firebaseConfig.projectId = "jvc-redactie-databank";
+    }
+    if (!firebaseConfig.storageBucket) {
+        firebaseConfig.storageBucket = "jvc-redactie-databank.appspot.com";
     }
 
     let db, auth, storage, userId;
