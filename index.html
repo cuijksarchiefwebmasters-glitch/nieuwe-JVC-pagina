@@ -22,6 +22,15 @@
     window.onload = async () => {
       setLogLevel('debug'); // Voor het debuggen van Firestore
       
+      const alertMessage = document.getElementById('alertMessage');
+      
+      // Controleer of de Firebase-configuratie geldig is
+      if (!firebaseConfig.projectId) {
+        console.error("Fout: 'projectId' ontbreekt in de Firebase-configuratie.");
+        alertMessage.innerText = "❌ FOUT: De verbinding met de database is mislukt. Probeer de app opnieuw te starten.";
+        return; // Stop de initialisatie als er een fout is
+      }
+      
       try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
@@ -41,7 +50,6 @@
             document.getElementById('userIdDisplay').innerText = `Ingelogd als: ${userId}`;
             startListeningForArticles();
           } else {
-            // Gebruiker is uitgelogd, of de sessie is verlopen
             console.log("Gebruiker is niet ingelogd.");
             document.getElementById('userIdDisplay').innerText = `Niet ingelogd`;
           }
@@ -49,8 +57,7 @@
 
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
-        // Geen alert, maar toon een boodschap op de pagina
-        document.getElementById('alertMessage').innerText = "Er is een fout opgetreden bij het initialiseren van de app. Controleer de console voor details.";
+        alertMessage.innerText = "❌ FOUT: Er is een onbekende fout opgetreden. Controleer de console voor meer details.";
       }
     };
 
@@ -64,7 +71,6 @@
 
     // Functie om metadata op te slaan in Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
-      // Let op: 'artikelen' collectie wordt hier gebruikt voor alle bestanden
       await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
         filename,
         fileUrl,
