@@ -12,23 +12,26 @@
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // Globale variabelen van de Canvas omgeving
+    // Global variables provided by the Canvas environment
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
     let db, auth, storage, userId;
+    const loginMessage = document.getElementById('loginMessage');
+    const dashboard = document.getElementById('dashboard');
+    const loadingMessage = document.getElementById('loadingMessage');
+    const userIdDisplay = document.getElementById('userIdDisplay');
 
     window.onload = async () => {
-      setLogLevel('debug'); // Voor het debuggen van Firestore
+      setLogLevel('debug'); // For Firestore debugging
       
-      const alertMessage = document.getElementById('alertMessage');
-      
-      // Controleer of de Firebase-configuratie geldig is
+      // Check for valid Firebase configuration
       if (!firebaseConfig.projectId) {
-        console.error("Fout: 'projectId' ontbreekt in de Firebase-configuratie.");
-        alertMessage.innerText = "❌ FOUT: De verbinding met de database is mislukt. Probeer de app opnieuw te starten.";
-        return; // Stop de initialisatie als er een fout is
+        console.error("Error: 'projectId' is missing in the Firebase config.");
+        loadingMessage.innerText = "❌ FOUT: De Firebase-configuratie is ongeldig. De applicatie kan niet verbinden met de database.";
+        loadingMessage.style.color = "red";
+        return; // Stop initialization on error
       }
       
       try {
@@ -37,31 +40,39 @@
         auth = getAuth(app);
         storage = getStorage(app);
 
-        // Anonieme authenticatie via de meegeleverde token
-        if (initialAuthToken) {
-          await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-          await signInAnonymously(auth);
-        }
-
+        // Listen for authentication state changes
         onAuthStateChanged(auth, (user) => {
           if (user) {
             userId = user.uid;
-            document.getElementById('userIdDisplay').innerText = `Ingelogd als: ${userId}`;
+            console.log("User successfully signed in:", userId);
+            userIdDisplay.innerText = `Ingelogd als: ${userId}`;
+            loadingMessage.style.display = 'none';
+            dashboard.style.display = 'block';
             startListeningForArticles();
           } else {
-            console.log("Gebruiker is niet ingelogd.");
-            document.getElementById('userIdDisplay').innerText = `Niet ingelogd`;
+            console.log("No user is signed in. Attempting to sign in.");
+            try {
+              if (initialAuthToken) {
+                signInWithCustomToken(auth, initialAuthToken);
+              } else {
+                signInAnonymously(auth);
+              }
+            } catch (signInError) {
+              console.error("Error signing in:", signInError);
+              loadingMessage.innerText = "❌ FOUT: Fout bij het aanmelden. Probeer de app opnieuw te starten.";
+              loadingMessage.style.color = "red";
+            }
           }
         });
 
       } catch (e) {
-        console.error("Fout bij het initialiseren van Firebase:", e);
-        alertMessage.innerText = "❌ FOUT: Er is een onbekende fout opgetreden. Controleer de console voor meer details.";
+        console.error("Error initializing Firebase:", e);
+        loadingMessage.innerText = "❌ FOUT: Er is een onbekende fout opgetreden. Controleer de console voor meer details.";
+        loadingMessage.style.color = "red";
       }
     };
 
-    // Functie om te uploaden naar Firebase Storage
+    // Function to upload to Firebase Storage
     async function uploadToStorage(file) {
       const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
@@ -69,18 +80,19 @@
       return fileUrl;
     }
 
-    // Functie om metadata op te slaan in Firestore
+    // Function to save metadata to Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
       await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
         filename,
         fileUrl,
         type,
         sectie,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        uploadedBy: userId // Save the user ID
       });
     }
 
-    // Luister naar veranderingen in de artikelen collectie
+    // Listen for changes in the articles collection
     function startListeningForArticles() {
       const artikelenCollectionRef = collection(db, `artifacts/${appId}/public/data/artikelen`);
       
@@ -91,11 +103,12 @@
         });
         renderArtikelen(artikelen);
       }, (error) => {
-        console.error("Fout bij het ophalen van artikelen:", error);
+        console.error("Error fetching articles:", error);
+        document.getElementById('artikelenLijst').innerHTML = `<p class="text-red-500">❌ Fout bij het laden van artikelen.</p>`;
       });
     }
 
-    // Render de artikelen op de pagina
+    // Render articles on the page
     function renderArtikelen(artikelen) {
       const container = document.getElementById('artikelenLijst');
       container.innerHTML = '';
@@ -108,18 +121,19 @@
         const div = document.createElement('div');
         div.className = 'bg-white shadow-md rounded-xl p-6 mb-4 border border-gray-200';
         div.innerHTML = `
-          <h3 class="text-xl font-bold text-red-700">${artikel.filename || 'Geen titel'}</h3>
+          <h3 class="text-xl font-bold text-red-700">${artikel.filename || artikel.titel || 'Geen titel'}</h3>
           <p class="text-sm text-gray-500 mt-1">Sectie: ${artikel.sectie || 'Onbekend'}</p>
-          <p class="text-sm text-gray-500">Document ID: <span class="font-mono text-xs bg-gray-100 rounded px-2 py-1">${artikel.id}</span></p>
+          <p class="text-sm text-gray-500">Geüpload door: ${artikel.uploadedBy || 'Onbekend'}</p>
           <div class="mt-4 text-gray-700">
             ${artikel.fileUrl ? `<a href="${artikel.fileUrl}" target="_blank" class="text-blue-500 hover:underline mt-2 inline-block">Bekijk bestand</a>` : 'Geen bestand gekoppeld.'}
+            ${artikel.inhoud ? `<p class="mt-2 text-gray-600">${artikel.inhoud}</p>` : ''}
           </div>
         `;
         container.appendChild(div);
       });
     }
 
-    // Event listener voor het uploaden van artikelen
+    // Event listener for article upload
     document.getElementById("artikelUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -135,17 +149,18 @@
           inhoud,
           sectie,
           type: 'artikel',
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          uploadedBy: userId // Save the user ID
         });
         msg.innerText = "✅ Artikel succesvol geüpload!";
         form.reset();
       } catch (error) {
-        console.error("Fout bij het uploaden van het artikel:", error);
+        console.error("Error uploading article:", error);
         msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
       }
     };
 
-    // Event listener voor het uploaden van documenten
+    // Event listener for document upload
     document.getElementById("docUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const docfile = document.getElementById("docfile").files[0];
@@ -164,12 +179,12 @@
         msg.innerText = "✅ Document succesvol geüpload!";
         document.getElementById("docUploadForm").reset();
       } catch (error) {
-        console.error("Fout bij het uploaden van het document:", error);
+        console.error("Error uploading document:", error);
         msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
       }
     };
 
-    // Event listener voor het uploaden van video's
+    // Event listener for video upload
     document.getElementById("videoUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const videofile = document.getElementById("videofile").files[0];
@@ -188,12 +203,12 @@
         msg.innerText = "✅ Video succesvol geüpload!";
         document.getElementById("videoUploadForm").reset();
       } catch (error) {
-        console.error("Fout bij het uploaden van de video:", error);
+        console.error("Error uploading video:", error);
         msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
       }
     };
 
-    // Event listener voor het uploaden van afbeeldingen
+    // Event listener for image upload
     document.getElementById("imageUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const imgfile = document.getElementById("imagefile").files[0];
@@ -212,7 +227,7 @@
         msg.innerText = "✅ Afbeelding succesvol geüpload!";
         document.getElementById("imageUploadForm").reset();
       } catch (error) {
-        console.error("Fout bij het uploaden van de afbeelding:", error);
+        console.error("Error uploading image:", error);
         msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
       }
     };
@@ -237,15 +252,6 @@
       height: 50px;
     }
 
-    header button {
-      background: white;
-      color: red;
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
     main {
       max-width: 900px;
       margin: 1rem auto;
@@ -254,6 +260,8 @@
 
     h2 {
       color: red;
+      font-weight: bold;
+      font-size: 1.5rem;
     }
 
     label {
@@ -294,6 +302,7 @@
     .message {
       font-weight: bold;
       margin-top: 0.5rem;
+      text-align: center;
     }
 
     .section {
@@ -303,6 +312,18 @@
       margin-bottom: 2rem;
       border-radius: 12px;
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    #dashboard {
+      display: none;
+    }
+
+    #loadingMessage {
+      text-align: center;
+      margin-top: 2rem;
+      font-weight: bold;
+      font-size: 1.2rem;
+      color: #333;
     }
   </style>
 </head>
@@ -314,92 +335,94 @@
   </header>
 
   <main>
-    <div id="alertMessage" class="message text-red-500 text-center mb-4"></div>
-
-    <div class="section">
-      <h2>Artikel uploaden</h2>
-      <form id="artikelUploadForm">
-        <label for="titel">Titel:</label>
-        <input type="text" id="titel" name="titel" required />
-        <label for="inhoud">Inhoud:</label>
-        <textarea id="inhoud" name="inhoud" rows="4"></textarea>
-        <label for="sectie">Sectie:</label>
-        <select id="sectie" name="sectie" required>
-          <option value="">Selecteer sectie</option>
-          <option value="Hoofdverhaal">Hoofdverhaal</option>
-          <option value="Nieuws">Nieuws</option>
-          <option value="Agenda">Agenda</option>
-          <option value="Sponsoren">Sponsoren</option>
-          <option value="Teams">Teams</option>
-        </select>
-        <button type="submit" class="btn">Uploaden</button>
-        <p id="artikelMessage" class="message"></p>
-      </form>
+    <div id="loadingMessage">
+      <p>⏳ Bezig met verbinden met de database...</p>
     </div>
 
-    <div class="section">
-      <h2>Document uploaden</h2>
-      <form id="docUploadForm">
-        <label for="docfile">Kies een document:</label>
-        <input type="file" id="docfile" accept=".pdf,.doc,.docx" required />
-        <label for="docsectie">Sectie:</label>
-        <select id="docsectie" required>
-          <option value="">Selecteer sectie</option>
-          <option value="Hoofdverhaal">Hoofdverhaal</option>
-          <option value="Nieuws">Nieuws</option>
-          <option value="Agenda">Agenda</option>
-          <option value="Sponsoren">Sponsoren</option>
-          <option value="Teams">Teams</option>
-        </select>
-        <button type="submit" class="btn">Uploaden</button>
-        <p id="docMessage" class="message"></p>
-      </form>
-    </div>
+    <div id="dashboard" class="space-y-8">
+      <div class="section">
+        <h2>Artikel uploaden</h2>
+        <form id="artikelUploadForm">
+          <label for="titel">Titel:</label>
+          <input type="text" id="titel" name="titel" required />
+          <label for="inhoud">Inhoud:</label>
+          <textarea id="inhoud" name="inhoud" rows="4"></textarea>
+          <label for="sectie">Sectie:</label>
+          <select id="sectie" name="sectie" required>
+            <option value="">Selecteer sectie</option>
+            <option value="Hoofdverhaal">Hoofdverhaal</option>
+            <option value="Nieuws">Nieuws</option>
+            <option value="Agenda">Agenda</option>
+            <option value="Sponsoren">Sponsoren</option>
+            <option value="Teams">Teams</option>
+          </select>
+          <button type="submit" class="btn">Uploaden</button>
+          <p id="artikelMessage" class="message"></p>
+        </form>
+      </div>
 
-    <div class="section">
-      <h2>Video uploaden</h2>
-      <form id="videoUploadForm">
-        <label for="videofile">Kies een video:</label>
-        <input type="file" id="videofile" accept="video/*" required />
-        <label for="videosectie">Sectie:</label>
-        <select id="videosectie" required>
-          <option value="">Selecteer sectie</option>
-          <option value="Hoofdverhaal">Hoofdverhaal</option>
-          <option value="Nieuws">Nieuws</option>
-          <option value="Agenda">Agenda</option>
-          <option value="Sponsoren">Sponsoren</option>
-          <option value="Teams">Teams</option>
-        </select>
-        <button type="submit" class="btn">Uploaden</button>
-        <p id="videoMessage" class="message"></p>
-      </form>
-    </div>
+      <div class="section">
+        <h2>Document uploaden</h2>
+        <form id="docUploadForm">
+          <label for="docfile">Kies een document:</label>
+          <input type="file" id="docfile" accept=".pdf,.doc,.docx" required />
+          <label for="docsectie">Sectie:</label>
+          <select id="docsectie" required>
+            <option value="">Selecteer sectie</option>
+            <option value="Hoofdverhaal">Hoofdverhaal</option>
+            <option value="Nieuws">Nieuws</option>
+            <option value="Agenda">Agenda</option>
+            <option value="Sponsoren">Sponsoren</option>
+            <option value="Teams">Teams</option>
+          </select>
+          <button type="submit" class="btn">Uploaden</button>
+          <p id="docMessage" class="message"></p>
+        </form>
+      </div>
 
-    <div class="section">
-      <h2>Afbeelding uploaden</h2>
-      <form id="imageUploadForm">
-        <label for="imagefile">Kies een afbeelding:</label>
-        <input type="file" id="imagefile" accept="image/*" required />
-        <label for="imagesectie">Sectie:</label>
-        <select id="imagesectie" required>
-          <option value="">Selecteer sectie</option>
-          <option value="Hoofdverhaal">Hoofdverhaal</option>
-          <option value="Nieuws">Nieuws</option>
-          <option value="Agenda">Agenda</option>
-          <option value="Sponsoren">Sponsoren</option>
-          <option value="Teams">Teams</option>
-        </select>
-        <button type="submit" class="btn">Uploaden</button>
-        <p id="imageMessage" class="message"></p>
-      </form>
-    </div>
+      <div class="section">
+        <h2>Video uploaden</h2>
+        <form id="videoUploadForm">
+          <label for="videofile">Kies een video:</label>
+          <input type="file" id="videofile" accept="video/*" required />
+          <label for="videosectie">Sectie:</label>
+          <select id="videosectie" required>
+            <option value="">Selecteer sectie</option>
+            <option value="Hoofdverhaal">Hoofdverhaal</option>
+            <option value="Nieuws">Nieuws</option>
+            <option value="Agenda">Agenda</option>
+            <option value="Sponsoren">Sponsoren</option>
+            <option value="Teams">Teams</option>
+          </select>
+          <button type="submit" class="btn">Uploaden</button>
+          <p id="videoMessage" class="message"></p>
+        </form>
+      </div>
 
-    ---
+      <div class="section">
+        <h2>Afbeelding uploaden</h2>
+        <form id="imageUploadForm">
+          <label for="imagefile">Kies een afbeelding:</label>
+          <input type="file" id="imagefile" accept="image/*" required />
+          <label for="imagesectie">Sectie:</label>
+          <select id="imagesectie" required>
+            <option value="">Selecteer sectie</option>
+            <option value="Hoofdverhaal">Hoofdverhaal</option>
+            <option value="Nieuws">Nieuws</option>
+            <option value="Agenda">Agenda</option>
+            <option value="Sponsoren">Sponsoren</option>
+            <option value="Teams">Teams</option>
+          </select>
+          <button type="submit" class="btn">Uploaden</button>
+          <p id="imageMessage" class="message"></p>
+        </form>
+      </div>
 
-    <div class="section">
-      <h2 class="mb-4">Artikel Overzicht</h2>
-      <div id="artikelenLijst" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <p class="text-gray-500">Laden...</p>
+      <div class="section">
+        <h2 class="mb-4">Artikel Overzicht</h2>
+        <div id="artikelenLijst" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <p class="text-gray-500">Laden...</p>
+        </div>
       </div>
     </div>
   </main>
