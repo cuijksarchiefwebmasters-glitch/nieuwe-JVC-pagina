@@ -14,8 +14,12 @@
 
     // Globale variabelen van de Canvas omgeving
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-      apiKey: "YOUR_API_KEY_HERE", // <-- VERVANG DEZE REGEL!
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    // TODO: VERVANG DEZE REGEL MET UW EIGEN API-SLEUTEL EN ANDERE INSTELLINGEN
+    // De app is nu onafhankelijk van de automatische omgeving.
+    const firebaseConfig = {
+      apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk", // <-- VERVANG DEZE REGEL!
       authDomain: "jvc-redactie-databank.firebaseapp.com",
       projectId: "jvc-redactie-databank",
       storageBucket: "jvc-redactie-databank.appspot.com"
@@ -25,51 +29,53 @@
 
     document.addEventListener('DOMContentLoaded', async () => {
       setLogLevel('debug');
+      const dashboard = document.getElementById('dashboard');
+
+      if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
+        console.error("Fout: Firebase-configuratie is niet beschikbaar of is ongeldig.");
+        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: De Firebase-configuratie is ongeldig. Vul uw API-sleutel in in de code.</div>`;
+        return;
+      }
+
       try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
         storage = getStorage(app);
         auth = getAuth(app);
         
-        // Meld de gebruiker aan met de meegeleverde token. Als dit mislukt, val dan terug op anoniem.
         try {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
+          if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
           } else {
             await signInAnonymously(auth);
           }
         } catch (e) {
-          console.error("Fout bij het inloggen, valt terug naar anoniem:", e);
+          console.error("Fout bij het inloggen met token, valt terug naar anoniem:", e);
           try {
             await signInAnonymously(auth);
           } catch (e2) {
             console.error("Fout bij anoniem inloggen:", e2);
-            const dashboard = document.getElementById('dashboard');
             dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: De verbinding met de database is mislukt. Probeer de pagina opnieuw te laden.</div>`;
             return;
           }
         }
 
-        // Luister naar de status van de authenticatie
         onAuthStateChanged(auth, (user) => {
           if (user) {
             const userId = user.uid;
             document.getElementById('userIdDisplay').innerText = `Gebruiker: ${userId}`;
             startListeningForArticles();
           } else {
-            const dashboard = document.getElementById('dashboard');
             dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Geen gebruiker gevonden na inlogpoging.</div>`;
           }
         });
 
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
-        const dashboard = document.getElementById('dashboard');
-        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon geen verbinding maken met de database.</div>`;
+        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon geen verbinding maken met de database. Controleer de API-sleutel.</div>`;
       }
     });
 
-    // Functie om te uploaden naar Firebase Storage
     async function uploadToStorage(file) {
       if (!storage) throw new Error("Storage service is niet geïnitialiseerd.");
       if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor uploaden.");
@@ -79,7 +85,6 @@
       return fileUrl;
     }
 
-    // Functie om metadata op te slaan in Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
       if (!db) throw new Error("Firestore is niet geïnitialiseerd.");
       if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor opslaan.");
@@ -94,7 +99,6 @@
       });
     }
 
-    // Luister naar veranderingen in de artikelen collectie
     function startListeningForArticles() {
       if (!db || !auth.currentUser) {
         console.error("Firestore of authenticatie is niet beschikbaar.");
@@ -114,7 +118,6 @@
       });
     }
 
-    // Render de artikelen op de pagina
     function renderArtikelen(artikelen) {
       const container = document.getElementById('artikelenLijst');
       container.innerHTML = '';
@@ -139,20 +142,18 @@
       });
     }
 
-    // Algemene functie voor bestandsuploads
     async function handleFileUpload(formId, fileInputId, sectionSelectId, messageId, type) {
       const form = document.getElementById(formId);
       const fileInput = document.getElementById(fileInputId);
       const sectionSelect = document.getElementById(sectionSelectId);
       const msgElement = document.getElementById(messageId);
       
-      // Valideer de authenticatie voordat u verdergaat
       if (!auth.currentUser) {
         msgElement.innerText = "❌ Fout: U bent niet ingelogd of de verbinding is mislukt.";
         return;
       }
 
-      msgElement.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
+      msgElement.innerText = "⏳ Bezig met uploaden...";
 
       const file = fileInput.files[0];
       const sectie = sectionSelect.value;
@@ -169,7 +170,6 @@
         msgElement.innerText = `✅ ${type.charAt(0).toUpperCase() + type.slice(1)} succesvol geüpload!`;
         form.reset();
         
-        // Verberg de melding na 3 seconden
         setTimeout(() => {
           msgElement.innerText = '';
         }, 3000);
@@ -179,7 +179,6 @@
       }
     }
 
-    // Event listeners voor alle formulieren
     document.getElementById("artikelUploadForm").onsubmit = async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -188,13 +187,12 @@
       const sectie = form.sectie.value;
       const msg = document.getElementById("artikelMessage");
       
-      // Valideer de authenticatie voordat u verdergaat
       if (!auth.currentUser) {
         msg.innerText = "❌ Fout: U bent niet ingelogd of de verbinding is mislukt.";
         return;
       }
 
-      msg.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
+      msg.innerText = "⏳ Bezig met uploaden...";
       
       try {
         if (!db) throw new Error("Database is niet geïnitialiseerd.");
@@ -211,7 +209,6 @@
         msg.innerText = "✅ Artikel succesvol geüpload!";
         form.reset();
 
-        // Verberg de melding na 3 seconden
         setTimeout(() => {
           msg.innerText = '';
         }, 3000);
@@ -244,7 +241,7 @@
     }
 
     header {
-      background: #dc2626; /* red-700 */
+      background: #dc2626;
       color: white;
       padding: 1rem;
       display: flex;
@@ -264,7 +261,7 @@
     }
 
     h2 {
-      color: #b91c1c; /* red-800 */
+      color: #b91c1c;
       font-weight: 700;
       font-size: 1.5rem;
       margin-bottom: 1.5rem;
@@ -287,7 +284,7 @@
       padding: 0.75rem;
       box-sizing: border-box;
       border-radius: 8px;
-      border: 1px solid #d1d5db; /* gray-300 */
+      border: 1px solid #d1d5db;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
 
@@ -295,7 +292,7 @@
     textarea:focus,
     select:focus {
       outline: none;
-      border-color: #ef4444; /* red-500 */
+      border-color: #ef4444;
       box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
     }
     
@@ -305,7 +302,7 @@
       margin-top: 2rem;
       box-sizing: border-box;
       border-radius: 8px;
-      background: #dc2626; /* red-700 */
+      background: #dc2626;
       color: white;
       border: none;
       cursor: pointer;
@@ -315,7 +312,7 @@
     }
 
     .btn:hover {
-      background-color: #b91c1c; /* red-800 */
+      background-color: #b91c1c;
     }
     
     .message {
@@ -326,7 +323,7 @@
 
     .section {
       background: white;
-      border: 1px solid #e5e7eb; /* gray-200 */
+      border: 1px solid #e5e7eb;
       padding: 2rem;
       margin-bottom: 2rem;
       border-radius: 12px;
