@@ -1,430 +1,169 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>JVC Cuijk Redactie Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-    import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    // Globale variabelen van de Canvas omgeving
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-    // TODO: VERVANG DEZE REGEL MET UW EIGEN API-SLEUTEL EN ANDERE INSTELLINGEN
-    // De app is nu onafhankelijk van de automatische omgeving.
-    const firebaseConfig = {
-      apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk", // <-- VERVANG DEZE REGEL!
-      authDomain: "jvc-redactie-databank.firebaseapp.com",
-      projectId: "jvc-redactie-databank",
-      storageBucket: "jvc-redactie-databank.appspot.com"
-    };
-
-    let db, storage, auth;
-
-    document.addEventListener('DOMContentLoaded', async () => {
-      setLogLevel('debug');
-      const dashboard = document.getElementById('dashboard');
-
-      if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
-        console.error("Fout: Firebase-configuratie is niet beschikbaar of is ongeldig.");
-        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: De Firebase-configuratie is ongeldig. Vul uw API-sleutel in in de code.</div>`;
-        return;
-      }
-
-      try {
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        storage = getStorage(app);
-        auth = getAuth(app);
-        
-        try {
-          if (initialAuthToken) {
-            await signInWithCustomToken(auth, initialAuthToken);
-          } else {
-            await signInAnonymously(auth);
-          }
-        } catch (e) {
-          console.error("Fout bij het inloggen met token, valt terug naar anoniem:", e);
-          try {
-            await signInAnonymously(auth);
-          } catch (e2) {
-            console.error("Fout bij anoniem inloggen:", e2);
-            dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: De verbinding met de database is mislukt. Probeer de pagina opnieuw te laden.</div>`;
-            return;
-          }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webshop</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
         }
-
-        onAuthStateChanged(auth, (user) => {
-          if (user) {
-            const userId = user.uid;
-            document.getElementById('userIdDisplay').innerText = `Gebruiker: ${userId}`;
-            startListeningForArticles();
-          } else {
-            dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Geen gebruiker gevonden na inlogpoging.</div>`;
-          }
-        });
-
-      } catch (e) {
-        console.error("Fout bij het initialiseren van Firebase:", e);
-        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon geen verbinding maken met de database. Controleer de API-sleutel.</div>`;
-      }
-    });
-
-    async function uploadToStorage(file) {
-      if (!storage) throw new Error("Storage service is niet geïnitialiseerd.");
-      if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor uploaden.");
-      const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const fileUrl = await getDownloadURL(snapshot.ref);
-      return fileUrl;
-    }
-
-    async function saveFileMetadata(fileUrl, type, sectie, filename) {
-      if (!db) throw new Error("Firestore is niet geïnitialiseerd.");
-      if (!auth.currentUser) throw new Error("Niet geauthenticeerd voor opslaan.");
-      const userId = auth.currentUser.uid;
-      await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
-        filename,
-        fileUrl,
-        type,
-        sectie,
-        createdAt: serverTimestamp(),
-        uploadedBy: userId 
-      });
-    }
-
-    function startListeningForArticles() {
-      if (!db || !auth.currentUser) {
-        console.error("Firestore of authenticatie is niet beschikbaar.");
-        return;
-      }
-      const artikelenCollectionRef = collection(db, `artifacts/${appId}/public/data/artikelen`);
-      
-      onSnapshot(artikelenCollectionRef, (querySnapshot) => {
-        const artikelen = [];
-        querySnapshot.forEach((doc) => {
-          artikelen.push({ id: doc.id, ...doc.data() });
-        });
-        renderArtikelen(artikelen);
-      }, (error) => {
-        console.error("Fout bij het ophalen van artikelen:", error);
-        document.getElementById('artikelenLijst').innerHTML = `<p class="text-red-500">❌ Fout bij het laden van artikelen. Controleer de netwerkverbinding en probeer het opnieuw.</p>`;
-      });
-    }
-
-    function renderArtikelen(artikelen) {
-      const container = document.getElementById('artikelenLijst');
-      container.innerHTML = '';
-      if (artikelen.length === 0) {
-        container.innerHTML = '<p class="text-gray-500">Nog geen artikelen gevonden.</p>';
-        return;
-      }
-      
-      artikelen.forEach(artikel => {
-        const div = document.createElement('div');
-        div.className = 'bg-white shadow-md rounded-xl p-6 mb-4 border border-gray-200';
-        div.innerHTML = `
-          <h3 class="text-xl font-bold text-red-700">${artikel.filename || artikel.titel || 'Geen titel'}</h3>
-          <p class="text-sm text-gray-500 mt-1">Sectie: ${artikel.sectie || 'Onbekend'}</p>
-          <p class="text-sm text-gray-500">Geüpload door: ${artikel.uploadedBy || 'Onbekend'}</p>
-          <div class="mt-4 text-gray-700">
-            ${artikel.fileUrl ? `<a href="${artikel.fileUrl}" target="_blank" class="text-blue-500 hover:underline mt-2 inline-block">Bekijk bestand</a>` : ''}
-            ${artikel.inhoud ? `<p class="mt-2 text-gray-600">${artikel.inhoud}</p>` : ''}
-          </div>
-        `;
-        container.appendChild(div);
-      });
-    }
-
-    async function handleFileUpload(formId, fileInputId, sectionSelectId, messageId, type) {
-      const form = document.getElementById(formId);
-      const fileInput = document.getElementById(fileInputId);
-      const sectionSelect = document.getElementById(sectionSelectId);
-      const msgElement = document.getElementById(messageId);
-      
-      if (!auth.currentUser) {
-        msgElement.innerText = "❌ Fout: U bent niet ingelogd of de verbinding is mislukt.";
-        return;
-      }
-
-      msgElement.innerText = "⏳ Bezig met uploaden...";
-
-      const file = fileInput.files[0];
-      const sectie = sectionSelect.value;
-      
-      if (!file) {
-        msgElement.innerText = `❌ Selecteer een ${type} om te uploaden.`;
-        return;
-      }
-
-      try {
-        const fileUrl = await uploadToStorage(file);
-        await saveFileMetadata(fileUrl, type, sectie, file.name);
-        
-        msgElement.innerText = `✅ ${type.charAt(0).toUpperCase() + type.slice(1)} succesvol geüpload!`;
-        form.reset();
-        
-        setTimeout(() => {
-          msgElement.innerText = '';
-        }, 3000);
-      } catch (error) {
-        console.error(`Fout bij het uploaden van de ${type}:`, error);
-        msgElement.innerText = `❌ Fout bij het uploaden van de ${type}. Probeer het opnieuw. Fout: ${error.message}`;
-      }
-    }
-
-    document.getElementById("artikelUploadForm").onsubmit = async (e) => {
-      e.preventDefault();
-      const form = e.target;
-      const titel = form.titel.value;
-      const inhoud = form.inhoud.value;
-      const sectie = form.sectie.value;
-      const msg = document.getElementById("artikelMessage");
-      
-      if (!auth.currentUser) {
-        msg.innerText = "❌ Fout: U bent niet ingelogd of de verbinding is mislukt.";
-        return;
-      }
-
-      msg.innerText = "⏳ Bezig met uploaden...";
-      
-      try {
-        if (!db) throw new Error("Database is niet geïnitialiseerd.");
-        const userId = auth.currentUser.uid;
-        await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
-          titel,
-          inhoud,
-          sectie,
-          type: 'artikel',
-          createdAt: serverTimestamp(),
-          uploadedBy: userId 
-        });
-        
-        msg.innerText = "✅ Artikel succesvol geüpload!";
-        form.reset();
-
-        setTimeout(() => {
-          msg.innerText = '';
-        }, 3000);
-      } catch (error) {
-        console.error("Fout bij het uploaden van het artikel:", error);
-        msg.innerText = `❌ Fout bij het uploaden. Probeer het opnieuw. Fout: ${error.message}`;
-      }
-    };
-
-    document.getElementById("docUploadForm").onsubmit = (e) => {
-      e.preventDefault();
-      handleFileUpload('docUploadForm', 'docfile', 'docsectie', 'docMessage', 'document');
-    };
-
-    document.getElementById("videoUploadForm").onsubmit = (e) => {
-      e.preventDefault();
-      handleFileUpload('videoUploadForm', 'videofile', 'videosectie', 'videoMessage', 'video');
-    };
-
-    document.getElementById("imageUploadForm").onsubmit = (e) => {
-      e.preventDefault();
-      handleFileUpload('imageUploadForm', 'imagefile', 'imagesectie', 'imageMessage', 'afbeelding');
-    };
-  </script>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      margin: 0;
-      background: #f3f4f6;
-    }
-
-    header {
-      background: #dc2626;
-      color: white;
-      padding: 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    header img {
-      height: 50px;
-    }
-
-    main {
-      max-width: 900px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-    }
-
-    h2 {
-      color: #b91c1c;
-      font-weight: 700;
-      font-size: 1.5rem;
-      margin-bottom: 1.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    label {
-      font-weight: 600;
-      margin-top: 1.5rem;
-      margin-bottom: 0.5rem;
-      display: block;
-      color: #1f2937;
-    }
-
-    input,
-    textarea,
-    select {
-      width: 100%;
-      padding: 0.75rem;
-      box-sizing: border-box;
-      border-radius: 8px;
-      border: 1px solid #d1d5db;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    input:focus,
-    textarea:focus,
-    select:focus {
-      outline: none;
-      border-color: #ef4444;
-      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
-    }
-    
-    .btn {
-      width: 100%;
-      padding: 0.8rem;
-      margin-top: 2rem;
-      box-sizing: border-box;
-      border-radius: 8px;
-      background: #dc2626;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-weight: 700;
-      transition: background-color 0.3s;
-      text-transform: uppercase;
-    }
-
-    .btn:hover {
-      background-color: #b91c1c;
-    }
-    
-    .message {
-      font-weight: 600;
-      margin-top: 1rem;
-      text-align: center;
-    }
-
-    .section {
-      background: white;
-      border: 1px solid #e5e7eb;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-  </style>
+        .container {
+            max-width: 900px;
+        }
+        .product-card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+    </style>
 </head>
-
-<body>
-  <header>
-    <img src="https://placehold.co/150x50/ff0000/ffffff?text=JVC+Cuijk" alt="JVC Cuijk Logo" />
-    <span id="userIdDisplay" class="text-xs text-red-100"></span>
-  </header>
-
-  <main>
-    <div id="dashboard" class="space-y-8">
-      <div class="section">
-        <h2>Artikel uploaden</h2>
-        <form id="artikelUploadForm">
-          <label for="titel">Titel:</label>
-          <input type="text" id="titel" name="titel" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500"/>
-          <label for="inhoud">Inhoud:</label>
-          <textarea id="inhoud" name="inhoud" rows="4" class="p-2 border rounded-md focus:ring-2 focus:ring-red-500"></textarea>
-          <label for="sectie">Sectie:</label>
-          <select id="sectie" name="sectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
-            <option value="">Selecteer sectie</option>
-            <option value="Hoofdverhaal">Hoofdverhaal</option>
-            <option value="Nieuws">Nieuws</option>
-            <option value="Agenda">Agenda</option>
-            <option value="Sponsoren">Sponsoren</option>
-            <option value="Teams">Teams</option>
-          </select>
-          <button type="submit" class="btn">Uploaden</button>
-          <p id="artikelMessage" class="message"></p>
-        </form>
-      </div>
-
-      <div class="section">
-        <h2>Document uploaden</h2>
-        <form id="docUploadForm">
-          <label for="docfile">Kies een document:</label>
-          <input type="file" id="docfile" accept=".pdf,.doc,.docx" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
-          <label for="docsectie">Sectie:</label>
-          <select id="docsectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
-            <option value="">Selecteer sectie</option>
-            <option value="Hoofdverhaal">Hoofdverhaal</option>
-            <option value="Nieuws">Nieuws</option>
-            <option value="Agenda">Agenda</option>
-            <option value="Sponsoren">Sponsoren</option>
-            <option value="Teams">Teams</option>
-          </select>
-          <button type="submit" class="btn">Uploaden</button>
-          <p id="docMessage" class="message"></p>
-        </form>
-      </div>
-
-      <div class="section">
-        <h2>Video uploaden</h2>
-        <form id="videoUploadForm">
-          <label for="videofile">Kies een video:</label>
-          <input type="file" id="videofile" accept="video/*" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
-          <label for="videosectie">Sectie:</label>
-          <select id="videosectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
-            <option value="">Selecteer sectie</option>
-            <option value="Hoofdverhaal">Hoofdverhaal</option>
-            <option value="Nieuws">Nieuws</option>
-            <option value="Agenda">Agenda</option>
-            <option value="Sponsoren">Sponsoren</option>
-            <option value="Teams">Teams</option>
-          </select>
-          <button type="submit" class="btn">Uploaden</button>
-          <p id="videoMessage" class="message"></p>
-        </form>
-      </div>
-
-      <div class="section">
-        <h2>Afbeelding uploaden</h2>
-        <form id="imageUploadForm">
-          <label for="imagefile">Kies een afbeelding:</label>
-          <input type="file" id="imagefile" accept="image/*" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500" />
-          <label for="imagesectie">Sectie:</label>
-          <select id="imagesectie" required class="p-2 border rounded-md focus:ring-2 focus:ring-red-500">
-            <option value="">Selecteer sectie</option>
-            <option value="Hoofdverhaal">Hoofdverhaal</option>
-            <option value="Nieuws">Nieuws</option>
-            <option value="Agenda">Agenda</option>
-            <option value="Sponsoren">Sponsoren</option>
-            <option value="Teams">Teams</option>
-          </select>
-          <button type="submit" class="btn">Uploaden</button>
-          <p id="imageMessage" class="message"></p>
-        </form>
-      </div>
-
-      <div class="section">
-        <h2 class="mb-4">Artikel Overzicht</h2>
-        <div id="artikelenLijst" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <p class="text-gray-500">Laden...</p>
+<body class="bg-gray-100 text-gray-800">
+    <div class="min-h-screen flex flex-col items-center justify-center p-4">
+        <div id="auth-error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg w-full max-w-lg mb-4" role="alert">
+            <strong class="font-bold">❌ Fout:</strong>
+            <span class="block sm:inline" id="auth-error-text"></span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="document.getElementById('auth-error-message').style.display='none'">
+                <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Sluit</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.697l-2.651 2.652a1.2 1.2 0 1 1-1.697-1.697l2.651-2.652-2.651-2.651a1.2 1.2 0 0 1 1.697-1.697L10 8.303l2.651-2.652a1.2 1.2 0 0 1 1.697 1.697L11.697 10l2.651 2.651a1.2 1.2 0 0 1 0 1.698z"/></svg>
+            </span>
         </div>
-      </div>
+        <div class="container bg-white p-8 rounded-xl shadow-lg w-full">
+            <h1 class="text-4xl font-bold text-center text-gray-900 mb-8">Webshop</h1>
+
+            <div id="product-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Producten worden hier dynamisch ingevoegd -->
+            </div>
+            
+            <div id="loading" class="text-center mt-8">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-t-blue-500 border-gray-200"></div>
+                <p class="mt-2 text-gray-600">Laden...</p>
+            </div>
+        </div>
     </div>
-  </main>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        // Globale variabelen
+        let app, db, auth;
+        
+        // De firebaseConfig wordt extern aangeleverd, maar we stellen een fallback in voor lokale ontwikkeling.
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+             apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk",
+ authDomein: "jvc-redactie-database.firebaseapp.com",
+ project-id: "jvc-redactie-databank",
+ opslagEmmer: "jvc-redactie-database.firebasestorage.app",
+  messagingSenderId: "775675536234",
+ app-id: "1:775675536234:web:a06128d8d475a8d26efb13"};
+      );
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Initializeert de app
+        try {
+            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
+                throw new Error("Firebase-configuratie is niet beschikbaar of is ongeldig. Vul uw Firebase API-sleutel in.");
+            }
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            document.getElementById('auth-error-message').style.display = 'none';
+        } catch (error) {
+            console.error('Initialisatie fout:', error);
+            const errorElement = document.getElementById('auth-error-text');
+            if (errorElement) {
+                errorElement.textContent = error.message;
+                document.getElementById('auth-error-message').style.display = 'block';
+            }
+        }
+        
+        async function fetchProducts() {
+            if (!db) {
+                console.error("Database is niet geïnitialiseerd.");
+                return;
+            }
+        
+            const loadingElement = document.getElementById('loading');
+            loadingElement.style.display = 'block';
+            
+            try {
+                // Auteur-ID verkrijgen
+                const userId = auth.currentUser?.uid || crypto.randomUUID();
+                
+                // Realtime luisteren naar updates in de productenverzameling
+                const collectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
+                onSnapshot(collectionRef, (querySnapshot) => {
+                    const productList = document.getElementById('product-list');
+                    productList.innerHTML = '';
+                    
+                    if (querySnapshot.empty) {
+                        productList.innerHTML = '<p class="text-center text-gray-500 col-span-full">Geen producten gevonden.</p>';
+                    } else {
+                        querySnapshot.forEach((doc) => {
+                            const product = doc.data();
+                            const productCard = `
+                                <div class="product-card bg-gray-50 p-6 rounded-xl shadow-md transition transform hover:scale-105">
+                                    <div class="w-full h-48 bg-gray-200 rounded-xl overflow-hidden mb-4 flex items-center justify-center">
+                                        <img src="${product.image || 'https://placehold.co/400x300/e2e8f0/4a5568?text=Product+Image'}" alt="${product.name}" class="object-cover w-full h-full">
+                                    </div>
+                                    <h2 class="text-2xl font-semibold text-gray-900 mb-2">${product.name}</h2>
+                                    <p class="text-xl text-blue-600 font-bold mb-4">€${product.price.toFixed(2)}</p>
+                                    <p class="text-gray-600">${product.description}</p>
+                                </div>
+                            `;
+                            productList.innerHTML += productCard;
+                        });
+                    }
+                    loadingElement.style.display = 'none';
+                }, (error) => {
+                    console.error("Fout bij het laden van producten:", error);
+                    loadingElement.style.display = 'none';
+                    document.getElementById('product-list').innerHTML = '<p class="text-center text-red-500 col-span-full">Fout bij het laden van producten.</p>';
+                });
+            } catch (error) {
+                console.error("Fout bij het ophalen van producten:", error);
+                loadingElement.style.display = 'none';
+            }
+        }
+        
+        window.onload = async function() {
+            if (auth) {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        console.log('Firebase auth success.');
+                    } else {
+                        // Fallback for anonymous login if no token is available
+                        await signInAnonymously(auth);
+                        console.log('Signed in anonymously.');
+                    }
+                    
+                    if (auth.currentUser) {
+                        await fetchProducts();
+                    }
+                } catch (error) {
+                    console.error('Firebase authentication failed:', error);
+                    const errorElement = document.getElementById('auth-error-text');
+                    if (errorElement) {
+                        errorElement.textContent = "Authenticatie mislukt. Probeer de pagina opnieuw te laden.";
+                        document.getElementById('auth-error-message').style.display = 'block';
+                    }
+                }
+            } else {
+                console.error("Auth-service is niet beschikbaar.");
+            }
+        };
+    </script>
 </body>
 </html>
