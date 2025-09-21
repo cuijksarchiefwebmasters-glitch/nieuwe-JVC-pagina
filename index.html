@@ -7,45 +7,56 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     // Globale variabelen van de Canvas omgeving
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "YOUR_API_KEY_HERE", // <-- VERVANG DEZE REGEL!
+      authDomain: "jvc-redactie-databank.firebaseapp.com",
+      projectId: "jvc-redactie-databank",
+      storageBucket: "jvc-redactie-databank.appspot.com"
+    };
 
-    // BELANGRIJK: Als u dit lokaal draait, vervang dan de API-sleutel hieronder
-    if (!firebaseConfig || !firebaseConfig.apiKey) {
-      firebaseConfig = {
-        apiKey: "YOUR_API_KEY_HERE", // <-- VERVANG DEZE REGEL!
-        authDomain: "jvc-redactie-databank.firebaseapp.com",
-        projectId: "jvc-redactie-databank",
-        storageBucket: "jvc-redactie-databank.appspot.com"
-      };
-    }
+    let db, storage, auth;
 
-    let db, storage;
-    // Genereer een unieke, anonieme ID voor elke sessie
-    const userId = 'anoniem-' + crypto.randomUUID(); 
     document.addEventListener('DOMContentLoaded', async () => {
       setLogLevel('debug');
       try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
         storage = getStorage(app);
+        auth = getAuth(app);
         
-        // Toon de userId in de header om te bevestigen dat de app werkt
-        document.getElementById('userIdDisplay').innerText = `Gebruiker: ${userId}`;
+        // Log in met de meegeleverde token of anoniem
+        onAuthStateChanged(auth, async (user) => {
+          if (user) {
+            const userId = user.uid;
+            document.getElementById('userIdDisplay').innerText = `Gebruiker: ${userId}`;
+            startListeningForArticles();
+          } else {
+            // Probeer in te loggen met de meegeleverde token
+            try {
+              if (typeof __initial_auth_token !== 'undefined') {
+                await signInWithCustomToken(auth, __initial_auth_token);
+              } else {
+                await signInAnonymously(auth);
+              }
+            } catch (e) {
+              console.error("Fout bij het inloggen:", e);
+              const dashboard = document.getElementById('dashboard');
+              dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon niet inloggen. Controleer de API-sleutel.</div>`;
+            }
+          }
+        });
 
-        // De app is klaar, laad de inhoud
-        startListeningForArticles();
-        
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
-        // Toon een foutmelding op de pagina als de verbinding mislukt
         const dashboard = document.getElementById('dashboard');
-        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon geen verbinding maken met de database. Controleer uw API-sleutel en probeer het opnieuw.</div>`;
+        dashboard.innerHTML = `<div class="p-6 text-center text-red-500 font-bold">❌ FOUT: Kon geen verbinding maken met de database.</div>`;
       }
     });
 
@@ -61,6 +72,7 @@
     // Functie om metadata op te slaan in Firestore
     async function saveFileMetadata(fileUrl, type, sectie, filename) {
       if (!db) throw new Error("Firestore is niet geïnitialiseerd.");
+      const userId = auth.currentUser ? auth.currentUser.uid : 'onbekend';
       await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
         filename,
         fileUrl,
@@ -122,6 +134,8 @@
       const fileInput = document.getElementById(fileInputId);
       const sectionSelect = document.getElementById(sectionSelectId);
       const msgElement = document.getElementById(messageId);
+      
+      msgElement.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
 
       const file = fileInput.files[0];
       const sectie = sectionSelect.value;
@@ -131,12 +145,17 @@
         return;
       }
 
-      msgElement.innerText = "⏳ Bezig met uploaden...";
       try {
         const fileUrl = await uploadToStorage(file);
         await saveFileMetadata(fileUrl, type, sectie, file.name);
+        
         msgElement.innerText = `✅ ${type.charAt(0).toUpperCase() + type.slice(1)} succesvol geüpload!`;
         form.reset();
+        
+        // Verberg de melding na 3 seconden
+        setTimeout(() => {
+          msgElement.innerText = '';
+        }, 3000);
       } catch (error) {
         console.error(`Fout bij het uploaden van de ${type}:`, error);
         msgElement.innerText = `❌ Fout bij het uploaden van de ${type}. Probeer het opnieuw.`;
@@ -151,10 +170,12 @@
       const inhoud = form.inhoud.value;
       const sectie = form.sectie.value;
       const msg = document.getElementById("artikelMessage");
-
-      msg.innerText = "⏳ Bezig met uploaden...";
+      
+      msg.innerText = "⏳ Bezig met uploaden..."; // Start de uploadmelding
+      
       try {
         if (!db) throw new Error("Database is niet geïnitialiseerd.");
+        const userId = auth.currentUser ? auth.currentUser.uid : 'onbekend';
         await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
           titel,
           inhoud,
@@ -163,8 +184,14 @@
           createdAt: serverTimestamp(),
           uploadedBy: userId 
         });
+        
         msg.innerText = "✅ Artikel succesvol geüpload!";
         form.reset();
+
+        // Verberg de melding na 3 seconden
+        setTimeout(() => {
+          msg.innerText = '';
+        }, 3000);
       } catch (error) {
         console.error("Fout bij het uploaden van het artikel:", error);
         msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
