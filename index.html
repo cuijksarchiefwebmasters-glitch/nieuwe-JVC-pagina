@@ -4,469 +4,399 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>JVC Cuijk Redactie Dashboard</title>
-  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, onSnapshot, doc, setDoc, query, serverTimestamp, getDocs, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+    import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Globale variabelen van de Canvas omgeving
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    let db, auth, storage, userId;
+
+    window.onload = async () => {
+      setLogLevel('debug'); // Voor het debuggen van Firestore
+      
+      try {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        storage = getStorage(app);
+
+        // Anonieme authenticatie via de meegeleverde token
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        onAuthStateChanged(auth, (user) => {
+          if (user) {
+            userId = user.uid;
+            document.getElementById('userIdDisplay').innerText = `Ingelogd als: ${userId}`;
+            startListeningForArticles();
+          } else {
+            // Gebruiker is uitgelogd, of de sessie is verlopen
+            console.log("Gebruiker is niet ingelogd.");
+            document.getElementById('userIdDisplay').innerText = `Niet ingelogd`;
+          }
+        });
+
+      } catch (e) {
+        console.error("Fout bij het initialiseren van Firebase:", e);
+        // Geen alert, maar toon een boodschap op de pagina
+        document.getElementById('alertMessage').innerText = "Er is een fout opgetreden bij het initialiseren van de app. Controleer de console voor details.";
+      }
+    };
+
+    // Functie om te uploaden naar Firebase Storage
+    async function uploadToStorage(file) {
+      const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const fileUrl = await getDownloadURL(snapshot.ref);
+      return fileUrl;
+    }
+
+    // Functie om metadata op te slaan in Firestore
+    async function saveFileMetadata(fileUrl, type, sectie, filename) {
+      // Let op: 'artikelen' collectie wordt hier gebruikt voor alle bestanden
+      await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
+        filename,
+        fileUrl,
+        type,
+        sectie,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    // Luister naar veranderingen in de artikelen collectie
+    function startListeningForArticles() {
+      const artikelenCollectionRef = collection(db, `artifacts/${appId}/public/data/artikelen`);
+      
+      onSnapshot(artikelenCollectionRef, (querySnapshot) => {
+        const artikelen = [];
+        querySnapshot.forEach((doc) => {
+          artikelen.push({ id: doc.id, ...doc.data() });
+        });
+        renderArtikelen(artikelen);
+      }, (error) => {
+        console.error("Fout bij het ophalen van artikelen:", error);
+      });
+    }
+
+    // Render de artikelen op de pagina
+    function renderArtikelen(artikelen) {
+      const container = document.getElementById('artikelenLijst');
+      container.innerHTML = '';
+      if (artikelen.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">Nog geen artikelen gevonden.</p>';
+        return;
+      }
+      
+      artikelen.forEach(artikel => {
+        const div = document.createElement('div');
+        div.className = 'bg-white shadow-md rounded-xl p-6 mb-4 border border-gray-200';
+        div.innerHTML = `
+          <h3 class="text-xl font-bold text-red-700">${artikel.filename || 'Geen titel'}</h3>
+          <p class="text-sm text-gray-500 mt-1">Sectie: ${artikel.sectie || 'Onbekend'}</p>
+          <p class="text-sm text-gray-500">Document ID: <span class="font-mono text-xs bg-gray-100 rounded px-2 py-1">${artikel.id}</span></p>
+          <div class="mt-4 text-gray-700">
+            ${artikel.fileUrl ? `<a href="${artikel.fileUrl}" target="_blank" class="text-blue-500 hover:underline mt-2 inline-block">Bekijk bestand</a>` : 'Geen bestand gekoppeld.'}
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Event listener voor het uploaden van artikelen
+    document.getElementById("artikelUploadForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const titel = form.titel.value;
+      const inhoud = form.inhoud.value;
+      const sectie = form.sectie.value;
+      const msg = document.getElementById("artikelMessage");
+
+      msg.innerText = "⏳ Bezig met uploaden...";
+      try {
+        await addDoc(collection(db, `artifacts/${appId}/public/data/artikelen`), {
+          titel,
+          inhoud,
+          sectie,
+          type: 'artikel',
+          createdAt: serverTimestamp()
+        });
+        msg.innerText = "✅ Artikel succesvol geüpload!";
+        form.reset();
+      } catch (error) {
+        console.error("Fout bij het uploaden van het artikel:", error);
+        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+      }
+    };
+
+    // Event listener voor het uploaden van documenten
+    document.getElementById("docUploadForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const docfile = document.getElementById("docfile").files[0];
+      const sectie = document.getElementById("docsectie").value;
+      const msg = document.getElementById("docMessage");
+
+      if (!docfile) {
+        msg.innerText = "❌ Selecteer een document om te uploaden.";
+        return;
+      }
+
+      msg.innerText = "⏳ Bezig met uploaden...";
+      try {
+        const fileUrl = await uploadToStorage(docfile);
+        await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
+        msg.innerText = "✅ Document succesvol geüpload!";
+        document.getElementById("docUploadForm").reset();
+      } catch (error) {
+        console.error("Fout bij het uploaden van het document:", error);
+        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+      }
+    };
+
+    // Event listener voor het uploaden van video's
+    document.getElementById("videoUploadForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const videofile = document.getElementById("videofile").files[0];
+      const sectie = document.getElementById("videosectie").value;
+      const msg = document.getElementById("videoMessage");
+
+      if (!videofile) {
+        msg.innerText = "❌ Selecteer een video om te uploaden.";
+        return;
+      }
+
+      msg.innerText = "⏳ Bezig met uploaden...";
+      try {
+        const fileUrl = await uploadToStorage(videofile);
+        await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
+        msg.innerText = "✅ Video succesvol geüpload!";
+        document.getElementById("videoUploadForm").reset();
+      } catch (error) {
+        console.error("Fout bij het uploaden van de video:", error);
+        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+      }
+    };
+
+    // Event listener voor het uploaden van afbeeldingen
+    document.getElementById("imageUploadForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const imgfile = document.getElementById("imagefile").files[0];
+      const sectie = document.getElementById("imagesectie").value;
+      const msg = document.getElementById("imageMessage");
+
+      if (!imgfile) {
+        msg.innerText = "❌ Selecteer een afbeelding om te uploaden.";
+        return;
+      }
+
+      msg.innerText = "⏳ Bezig met uploaden...";
+      try {
+        const fileUrl = await uploadToStorage(imgfile);
+        await saveFileMetadata(fileUrl, 'afbeelding', sectie, imgfile.name);
+        msg.innerText = "✅ Afbeelding succesvol geüpload!";
+        document.getElementById("imageUploadForm").reset();
+      } catch (error) {
+        console.error("Fout bij het uploaden van de afbeelding:", error);
+        msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
+      }
+    };
+  </script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #333; }
-    header { background: #c00; color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    header img { height: 50px; }
-    header button { background: white; color: #c00; padding: 0.5rem 1rem; border: none; border-radius: 25px; cursor: pointer; font-weight: bold; transition: background-color 0.3s; }
-    header button:hover { background-color: #f5f5f5; }
-    main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-    h1 { color: #c00; text-align: center; margin-bottom: 2rem; }
-    h2 { color: #c00; border-bottom: 2px solid #ddd; padding-bottom: 0.5rem; margin-top: 2rem; }
-    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 2rem; }
-    .login-container { text-align: center; padding: 3rem; }
-    .login-container button { padding: 1rem 2rem; font-size: 1.2rem; }
-    form { display: flex; flex-direction: column; }
-    label { font-weight: bold; margin-top: 1rem; margin-bottom: 0.5rem; }
-    input, textarea, select { width: 100%; padding: 0.8rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    button { background: #c00; color: white; padding: 0.8rem; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; }
-    button:hover { background-color: #a00; }
-    .message { font-weight: bold; margin-top: 0.5rem; text-align: center; }
-    .data-list { list-style: none; padding: 0; }
-    .data-list li { background: #f9f9f9; border: 1px solid #eee; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; word-break: break-word; }
-    .data-list li a { color: #c00; text-decoration: none; }
-    .data-list li a:hover { text-decoration: underline; }
-    .delete-btn { background: #dc3545; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; margin-left: 1rem; transition: background-color 0.3s; }
-    .delete-btn:hover { background-color: #c82333; }
-    #userIdDisplay { font-size: 0.8rem; color: #fff; }
-    
-    /* Aangepaste modal voor bevestiging */
-    .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
-    .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 400px; border-radius: 8px; text-align: center; }
-    .modal-buttons { margin-top: 20px; }
-    .modal-buttons button { margin: 0 10px; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
-    #modalConfirmBtn { background-color: #c00; color: white; }
-    #modalCancelBtn { background-color: #ccc; color: black; }
-    
-    /* Media queries voor responsiviteit */
-    @media (max-width: 600px) {
-      header img { height: 40px; }
-      header button { padding: 0.4rem 0.8rem; }
-      main { margin: 1rem auto; padding: 0 0.5rem; }
-      h1 { font-size: 1.5rem; }
-      .container { padding: 1rem; }
-      .login-container button { padding: 0.8rem 1.5rem; font-size: 1rem; }
-      .data-list li { flex-direction: column; align-items: flex-start; }
-      .data-list li .delete-btn { margin-left: 0; margin-top: 0.5rem; }
+    body {
+      font-family: Arial;
+      margin: 0;
+      background: #f3f4f6;
+    }
+
+    header {
+      background: red;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header img {
+      height: 50px;
+    }
+
+    header button {
+      background: white;
+      color: red;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 1rem auto;
+      padding: 0 1rem;
+    }
+
+    h2 {
+      color: red;
+    }
+
+    label {
+      font-weight: bold;
+      margin: 1rem 0 0.3rem;
+      display: block;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      padding: 0.6rem;
+      margin-top: 0.3rem;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid #ddd;
     }
     
-    #statusLog {
-      background: #f9f9f9;
-      border: 1px solid #ddd;
-      padding: 1rem;
+    .btn {
+      width: 100%;
+      padding: 0.8rem;
+      margin-top: 1rem;
+      box-sizing: border-box;
       border-radius: 8px;
-      margin-top: 2rem;
-      max-height: 200px;
-      overflow-y: auto;
-      text-align: left;
+      background: red;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+
+    .btn:hover {
+      background-color: #c53030;
+    }
+    
+    .message {
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+
+    .section {
+      background: white;
+      border: 1px solid #ddd;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
   </style>
 </head>
+
 <body>
-  <!-- Login-sectie -->
-  <div id="loginSection" class="login-container">
-    <h1>Welkom bij het JVC Redactie Dashboard</h1>
-    <p id="loginMessage" class="message">Bezig met inloggen...</p>
-    
-    <h2>Status Logboek</h2>
-    <ul id="statusLog"></ul>
-  </div>
+  <header>
+    <img src="https://placehold.co/150x50/ff0000/ffffff?text=JVC+Cuijk" alt="JVC Cuijk Logo" />
+    <span id="userIdDisplay" class="text-xs">Laden...</span>
+  </header>
 
-  <!-- Dashboard-sectie -->
-  <div id="dashboardSection" style="display: none;">
-    <header>
-      <img src="https://placehold.co/150x50/c00/fff?text=JVC-logo.png" alt="JVC Cuijk Logo" />
-      <span id="userIdDisplay"></span>
-      <button id="logoutBtn">Uitloggen</button>
-    </header>
+  <main>
+    <div id="alertMessage" class="message text-red-500 text-center mb-4"></div>
 
-    <main>
-      <h1>JVC Redactie Dashboard</h1>
+    <div class="section">
+      <h2>Artikel uploaden</h2>
+      <form id="artikelUploadForm">
+        <label for="titel">Titel:</label>
+        <input type="text" id="titel" name="titel" required />
+        <label for="inhoud">Inhoud:</label>
+        <textarea id="inhoud" name="inhoud" rows="4"></textarea>
+        <label for="sectie">Sectie:</label>
+        <select id="sectie" name="sectie" required>
+          <option value="">Selecteer sectie</option>
+          <option value="Hoofdverhaal">Hoofdverhaal</option>
+          <option value="Nieuws">Nieuws</option>
+          <option value="Agenda">Agenda</option>
+          <option value="Sponsoren">Sponsoren</option>
+          <option value="Teams">Teams</option>
+        </select>
+        <button type="submit" class="btn">Uploaden</button>
+        <p id="artikelMessage" class="message"></p>
+      </form>
+    </div>
 
-      <!-- Nieuwsberichten -->
-      <div id="newsSection" class="container">
-        <h2>Nieuwsberichten</h2>
-        <form id="newsForm">
-          <label for="titel">Titel:</label>
-          <input type="text" id="titel" required />
-          
-          <label for="tekst">Tekst:</label>
-          <textarea id="tekst" rows="5" required></textarea>
-          
-          <label for="sectie">Sectie:</label>
-          <select id="sectie" required>
-            <option value="nieuws">Nieuws</option>
-            <option value="wedstrijden">Wedstrijden</option>
-            <option value="evenementen">Evenementen</option>
-          </select>
-          
-          <button type="submit">Nieuwsbericht plaatsen</button>
-          <p id="newsMessage" class="message"></p>
-        </form>
-        <h3>Gepubliceerde berichten</h3>
-        <ul id="newsList" class="data-list"></ul>
-      </div>
+    <div class="section">
+      <h2>Document uploaden</h2>
+      <form id="docUploadForm">
+        <label for="docfile">Kies een document:</label>
+        <input type="file" id="docfile" accept=".pdf,.doc,.docx" required />
+        <label for="docsectie">Sectie:</label>
+        <select id="docsectie" required>
+          <option value="">Selecteer sectie</option>
+          <option value="Hoofdverhaal">Hoofdverhaal</option>
+          <option value="Nieuws">Nieuws</option>
+          <option value="Agenda">Agenda</option>
+          <option value="Sponsoren">Sponsoren</option>
+          <option value="Teams">Teams</option>
+        </select>
+        <button type="submit" class="btn">Uploaden</button>
+        <p id="docMessage" class="message"></p>
+      </form>
+    </div>
 
-      <!-- Documenten -->
-      <div id="docsSection" class="container">
-        <h2>Documenten</h2>
-        <form id="docUploadForm">
-          <label for="docfile">Document (.pdf, .doc, etc.):</label>
-          <input type="file" id="docfile" required />
-          
-          <label for="docsectie">Sectie:</label>
-          <select id="docsectie" required>
-            <option value="algemeen">Algemeen</option>
-            <option value="regels">Regels</option>
-          </select>
-          
-          <button type="submit">Document uploaden</button>
-          <p id="docMessage" class="message"></p>
-        </form>
-        <h3>Gepubliceerde documenten</h3>
-        <ul id="docsList" class="data-list"></ul>
-      </div>
+    <div class="section">
+      <h2>Video uploaden</h2>
+      <form id="videoUploadForm">
+        <label for="videofile">Kies een video:</label>
+        <input type="file" id="videofile" accept="video/*" required />
+        <label for="videosectie">Sectie:</label>
+        <select id="videosectie" required>
+          <option value="">Selecteer sectie</option>
+          <option value="Hoofdverhaal">Hoofdverhaal</option>
+          <option value="Nieuws">Nieuws</option>
+          <option value="Agenda">Agenda</option>
+          <option value="Sponsoren">Sponsoren</option>
+          <option value="Teams">Teams</option>
+        </select>
+        <button type="submit" class="btn">Uploaden</button>
+        <p id="videoMessage" class="message"></p>
+      </form>
+    </div>
 
-      <!-- Video's -->
-      <div id="videosSection" class="container">
-        <h2>Video's</h2>
-        <form id="videoUploadForm">
-          <label for="videofile">Video (.mp4, etc.):</label>
-          <input type="file" id="videofile" accept="video/*" required />
-          
-          <label for="videosectie">Sectie:</label>
-          <select id="videosectie" required>
-            <option value="wedstrijdbeelden">Wedstrijdbeelden</option>
-            <option value="interviews">Interviews</option>
-          </select>
-          
-          <button type="submit">Video uploaden</button>
-          <p id="videoMessage" class="message"></p>
-        </form>
-        <h3>Gepubliceerde video's</h3>
-        <ul id="videosList" class="data-list"></ul>
-      </div>
-    </main>
-  </div>
-  
-  <!-- Aangepaste modal voor bevestiging -->
-  <div id="customModal" class="modal">
-    <div class="modal-content">
-      <p id="modalMessage"></p>
-      <div class="modal-buttons">
-        <button id="modalConfirmBtn">Bevestigen</button>
-        <button id="modalCancelBtn">Annuleren</button>
+    <div class="section">
+      <h2>Afbeelding uploaden</h2>
+      <form id="imageUploadForm">
+        <label for="imagefile">Kies een afbeelding:</label>
+        <input type="file" id="imagefile" accept="image/*" required />
+        <label for="imagesectie">Sectie:</label>
+        <select id="imagesectie" required>
+          <option value="">Selecteer sectie</option>
+          <option value="Hoofdverhaal">Hoofdverhaal</option>
+          <option value="Nieuws">Nieuws</option>
+          <option value="Agenda">Agenda</option>
+          <option value="Sponsoren">Sponsoren</option>
+          <option value="Teams">Teams</option>
+        </select>
+        <button type="submit" class="btn">Uploaden</button>
+        <p id="imageMessage" class="message"></p>
+      </form>
+    </div>
+
+    ---
+
+    <div class="section">
+      <h2 class="mb-4">Artikel Overzicht</h2>
+      <div id="artikelenLijst" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <p class="text-gray-500">Laden...</p>
       </div>
     </div>
-  </div>
-  
-  <!-- JavaScript-code voor inloggen en diagnostiek -->
-  <script type="module">
-    // Functie voor het updaten van het logboek
-    const statusLog = document.getElementById("statusLog");
-    const updateStatus = (message, isError = false) => {
-        const li = document.createElement("li");
-        const timestamp = new Date().toLocaleTimeString();
-        li.textContent = `[${timestamp}] ${message}`;
-        if (isError) {
-            li.style.color = "#dc3545";
-        } else {
-            li.style.color = "#28a745";
-        }
-        statusLog.appendChild(li);
-        statusLog.scrollTop = statusLog.scrollHeight;
-    };
-    
-    // De gehele applicatielogica is nu verpakt in een asynchrone functie om 'return' statements mogelijk te maken
-    // en de uitvoering netjes te stoppen bij fouten.
-    const runApp = async () => {
-        // START: Diagnostische Pre-Flight Check
-        updateStatus("🚀 Beginnen met diagnostische controle...");
-
-        // Laden van Firebase SDK's
-        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
-        const { getAuth, signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-        const { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot, serverTimestamp, deleteDoc, addDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-        const { getStorage, ref, uploadBytes, getDownloadURL } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js");
-        const { setLogLevel } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-    
-        // Globale variabelen van het Canvas-platform
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        let firebaseConfig;
-        try {
-            firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-            if (!firebaseConfig.projectId) {
-                updateStatus("❌ FOUT: 'projectId' ontbreekt in de Firebase-configuratie. De applicatie stopt nu.", true);
-                return;
-            }
-            updateStatus("✅ 'firebaseConfig' is correct geladen en bevat 'projectId'.");
-        } catch (error) {
-            updateStatus(`❌ FOUT bij het verwerken van de Firebase-configuratie: ${error.message}. De applicatie stopt nu.`, true);
-            return;
-        }
-
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // UI-elementen
-        const loginSection = document.getElementById("loginSection");
-        const dashboardSection = document.getElementById("dashboardSection");
-        const logoutBtn = document.getElementById("logoutBtn");
-        const userIdDisplay = document.getElementById("userIdDisplay");
-        const loginMessage = document.getElementById("loginMessage");
-        
-        let currentUserId = null;
-        let app, db, auth, storage;
-
-        // Functie voor het inloggen
-        const handleLogin = async () => {
-            updateStatus("Starten van automatisch inloggen...");
-            try {
-                if (initialAuthToken) {
-                    updateStatus("Inloggen met aangepaste token...");
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    updateStatus("Anoniem inloggen...");
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                updateStatus(`❌ Inlogfout: ${error.message}`, true);
-            }
-        };
-
-        // Firebase initialisatie
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            storage = getStorage(app);
-            
-            setLogLevel('debug');
-            updateStatus("✅ Firebase is geïnitialiseerd.");
-            
-            // Nu kunnen we de login starten en de auth listener toevoegen
-            handleLogin();
-
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    currentUserId = user.uid;
-                    updateStatus("✅ Inloggen succesvol.");
-                    userIdDisplay.textContent = `Ingelogd als: ${currentUserId}`;
-                    
-                    loginSection.style.display = "none";
-                    dashboardSection.style.display = "block";
-
-                    // Luister naar real-time updates van nieuwsberichten
-                    const newsCollectionRef = collection(db, `/artifacts/${appId}/public/data/nieuws`);
-                    const newsQuery = query(newsCollectionRef);
-                    onSnapshot(newsQuery, (snapshot) => {
-                        const newsList = document.getElementById("newsList");
-                        newsList.innerHTML = "";
-                        snapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const li = document.createElement("li");
-                            li.innerHTML = `<strong>${data.titel}</strong><br>${data.tekst}<br><small>Sectie: ${data.sectie}</small>`;
-                            
-                            const deleteBtn = document.createElement("button");
-                            deleteBtn.textContent = "Verwijderen";
-                            deleteBtn.className = "delete-btn";
-                            deleteBtn.onclick = async () => {
-                                 showCustomModal("Weet u zeker dat u dit nieuwsbericht wilt verwijderen?", async () => {
-                                     await deleteDoc(doc(db, newsCollectionRef.path, doc.id));
-                                 });
-                            };
-                            li.appendChild(deleteBtn);
-                            newsList.appendChild(li);
-                        });
-                    });
-
-                    // Luister naar real-time updates van documenten
-                    const docsCollectionRef = collection(db, `/artifacts/${appId}/public/data/documenten`);
-                    const docsQuery = query(docsCollectionRef);
-                    onSnapshot(docsQuery, (snapshot) => {
-                        const docsList = document.getElementById("docsList");
-                        docsList.innerHTML = "";
-                        snapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const li = document.createElement("li");
-                            li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk document</a><br><small>Sectie: ${data.sectie}</small>`;
-                            
-                            const deleteBtn = document.createElement("button");
-                            deleteBtn.textContent = "Verwijderen";
-                            deleteBtn.className = "delete-btn";
-                            deleteBtn.onclick = async () => {
-                                showCustomModal("Weet u zeker dat u dit document wilt verwijderen?", async () => {
-                                     await deleteDoc(doc(db, docsCollectionRef.path, doc.id));
-                                });
-                            };
-                            li.appendChild(deleteBtn);
-                            docsList.appendChild(li);
-                        });
-                    });
-
-                    // Luister naar real-time updates van video's
-                    const videosCollectionRef = collection(db, `/artifacts/${appId}/public/data/videos`);
-                    const videosQuery = query(videosCollectionRef);
-                    onSnapshot(videosQuery, (snapshot) => {
-                        const videosList = document.getElementById("videosList");
-                        videosList.innerHTML = "";
-                        snapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const li = document.createElement("li");
-                            li.innerHTML = `<strong>${data.naam}</strong><br><a href="${data.url}" target="_blank">Bekijk video</a><br><small>Sectie: ${data.sectie}</small>`;
-                            
-                            const deleteBtn = document.createElement("button");
-                            deleteBtn.textContent = "Verwijderen";
-                            deleteBtn.className = "delete-btn";
-                            deleteBtn.onclick = async () => {
-                                showCustomModal("Weet u zeker dat u deze video wilt verwijderen?", async () => {
-                                     await deleteDoc(doc(db, videosCollectionRef.path, doc.id));
-                                });
-                            };
-                            li.appendChild(deleteBtn);
-                            videosList.appendChild(li);
-                        });
-                    });
-
-                } else {
-                    updateStatus("Geen gebruiker ingelogd.", true);
-                    loginSection.style.display = "block";
-                    dashboardSection.style.display = "none";
-                }
-            });
-
-        } catch (error) {
-            updateStatus(`❌ Fout bij initialisatie van Firebase: ${error.message}`, true);
-        }
-        
-        // Functie voor de aangepaste modal
-        function showCustomModal(message, onConfirm) {
-            const modal = document.getElementById('customModal');
-            const modalMessage = document.getElementById('modalMessage');
-            const modalConfirmBtn = document.getElementById('modalConfirmBtn');
-            const modalCancelBtn = document.getElementById('modalCancelBtn');
-
-            modalMessage.textContent = message;
-            modal.style.display = "block";
-
-            modalConfirmBtn.onclick = () => {
-                onConfirm();
-                modal.style.display = "none";
-            };
-
-            modalCancelBtn.onclick = () => {
-                modal.style.display = "none";
-            };
-        }
-
-        // Opslaan van nieuwsbericht
-        const newsForm = document.getElementById("newsForm");
-        if(newsForm) {
-            newsForm.onsubmit = async (e) => {
-                e.preventDefault();
-                const titel = document.getElementById("titel").value;
-                const tekst = document.getElementById("tekst").value;
-                const sectie = document.getElementById("sectie").value;
-                const msg = document.getElementById("newsMessage");
-
-                msg.innerText = "⏳ Bezig met opslaan...";
-                try {
-                    const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/nieuws`), {
-                        titel: titel,
-                        tekst: tekst,
-                        sectie: sectie,
-                        timestamp: serverTimestamp()
-                    });
-                    msg.innerText = "✅ Nieuwsbericht succesvol opgeslagen!";
-                    newsForm.reset();
-                } catch (error) {
-                    console.error("Fout bij het opslaan van het nieuwsbericht:", error);
-                    msg.innerText = "❌ Fout bij het opslaan. Probeer het opnieuw.";
-                }
-            };
-        }
-
-        // Functie voor het uploaden naar Firebase Storage
-        const uploadToStorage = async (file) => {
-            const storageRef = ref(storage, `${appId}/${file.name}`);
-            await uploadBytes(storageRef, file);
-            return await getDownloadURL(storageRef);
-        };
-
-        // Functie voor het opslaan van file metadata in Firestore
-        const saveFileMetadata = async (url, type, sectie, naam) => {
-            const collectionPath = `/artifacts/${appId}/public/data/${type}en`;
-            await addDoc(collection(db, collectionPath), {
-                url: url,
-                naam: naam,
-                sectie: sectie,
-                timestamp: serverTimestamp()
-            });
-        };
-
-        // Event listener voor het uploaden van documenten
-        const docUploadForm = document.getElementById("docUploadForm");
-        if(docUploadForm) {
-          docUploadForm.onsubmit = async (e) => {
-              e.preventDefault();
-              const docfile = document.getElementById("docfile").files[0];
-              const sectie = document.getElementById("docsectie").value;
-              const msg = document.getElementById("docMessage");
-      
-              if (!docfile) {
-                  msg.innerText = "❌ Selecteer een document om te uploaden.";
-                  return;
-              }
-      
-              msg.innerText = "⏳ Bezig met uploaden...";
-              try {
-                  const fileUrl = await uploadToStorage(docfile);
-                  await saveFileMetadata(fileUrl, 'document', sectie, docfile.name);
-                  msg.innerText = "✅ Document succesvol geüpload!";
-              } catch (error) {
-                  console.error("Fout bij het uploaden van het document:", error);
-                  msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-              }
-          };
-        }
-
-
-        // Event listener voor het uploaden van video's
-        const videoUploadForm = document.getElementById("videoUploadForm");
-        if(videoUploadForm) {
-          videoUploadForm.onsubmit = async (e) => {
-              e.preventDefault();
-              const videofile = document.getElementById("videofile").files[0];
-              const sectie = document.getElementById("videosectie").value;
-              const msg = document.getElementById("videoMessage");
-      
-              if (!videofile) {
-                  msg.innerText = "❌ Selecteer een video om te uploaden.";
-                  return;
-              }
-      
-              msg.innerText = "⏳ Bezig met uploaden...";
-              try {
-                  const fileUrl = await uploadToStorage(videofile);
-                  await saveFileMetadata(fileUrl, 'video', sectie, videofile.name);
-                  msg.innerText = "✅ Video succesvol geüpload!";
-              } catch (error) {
-                  console.error("Fout bij het uploaden van de video:", error);
-                  msg.innerText = "❌ Fout bij het uploaden. Probeer het opnieuw.";
-              }
-          };
-        }
-
-
-        // Logout-knop
-        if (logoutBtn) {
-            logoutBtn.onclick = () => signOut(auth);
-        }
-    };
-
-    // Roep de functie aan om de app te starten
-    runApp();
-
-  </script>
+  </main>
 </body>
+
 </html>
