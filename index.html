@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
     import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -17,12 +17,10 @@
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
     let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
-    // BELANGRIJK: Vervang "YOUR_API_KEY_HERE" met uw echte Firebase Web API-sleutel.
-    // U vindt deze in uw Firebase Projectinstellingen > Algemeen > 'Jouw apps'.
-    if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.includes('YOUR_API_KEY')) {
-      console.warn("Firebase-configuratie niet gevonden of onvolledig. Gebruik van standaardwaarden.");
+    // BELANGRIJK: Als u dit lokaal draait, vervang dan de API-sleutel hieronder
+    if (!firebaseConfig || !firebaseConfig.apiKey) {
       firebaseConfig = {
-        apiKey: "AIzaSyDy6UTjkp43dmyYOvBxMdZfxxl-UW7OhUk", // <-- VERVANG DEZE REGEL!
+        apiKey: "YOUR_API_KEY_HERE", // <-- VERVANG DEZE REGEL!
         authDomain: "jvc-redactie-databank.firebaseapp.com",
         projectId: "jvc-redactie-databank",
         storageBucket: "jvc-redactie-databank.appspot.com"
@@ -43,7 +41,9 @@
         storage = getStorage(app);
 
         loadingMessage.innerText = "⏳ Bezig met inloggen...";
+        
         await handleAuthentication();
+        
       } catch (e) {
         console.error("Fout bij het initialiseren van Firebase:", e);
         loadingMessage.innerText = `❌ FOUT: Kon geen verbinding maken met de database. Controleer uw API-sleutel en probeer het opnieuw.`;
@@ -52,33 +52,26 @@
     };
 
     async function handleAuthentication() {
-      return new Promise((resolve, reject) => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            unsubscribe(); // Stop met luisteren na de eerste keer inloggen
-            userId = user.uid;
-            console.log("Gebruiker succesvol aangemeld:", userId);
-            userIdDisplay.innerText = `Ingelogd als: ${userId}`;
-            loadingMessage.style.display = 'none';
-            dashboard.style.display = 'block';
-            startListeningForArticles();
-            resolve(user);
-          } else {
-            try {
-              if (initialAuthToken) {
-                await signInWithCustomToken(auth, initialAuthToken);
-              } else {
-                await signInAnonymously(auth);
-              }
-            } catch (signInError) {
-              console.error("Fout bij aanmelden:", signInError);
-              loadingMessage.innerText = "❌ FOUT: Inloggen mislukt. Probeer het opnieuw.";
-              loadingMessage.style.color = "red";
-              reject(signInError);
-            }
-          }
-        });
-      });
+      try {
+        if (initialAuthToken) {
+          const userCredential = await signInWithCustomToken(auth, initialAuthToken);
+          userId = userCredential.user.uid;
+        } else {
+          const userCredential = await signInAnonymously(auth);
+          userId = userCredential.user.uid;
+        }
+
+        console.log("Gebruiker succesvol aangemeld:", userId);
+        userIdDisplay.innerText = `Ingelogd als: ${userId}`;
+        loadingMessage.style.display = 'none';
+        dashboard.style.display = 'block';
+        startListeningForArticles();
+
+      } catch (signInError) {
+        console.error("Fout bij aanmelden:", signInError);
+        loadingMessage.innerText = "❌ FOUT: Inloggen mislukt. Probeer het opnieuw.";
+        loadingMessage.style.color = "red";
+      }
     }
 
     // Functie om te uploaden naar Firebase Storage
